@@ -1,0 +1,11 @@
+.env
+.production.env
+.test.env
+.development.env
+dist
+node_modules
+.skills-lock.json
+AGENTS.md
+.agents/
+skills-lock.json
+coverage/
