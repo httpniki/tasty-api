@@ -10,9 +10,7 @@ export class Auth {
 
       return function <T extends (...args: any[]) => any>(target: T, _: DecoratorContext) {
          return async function(this: any, req: Request, res: Response, next: NextFunction) {
-
             const accessTokenService = new AccessTokenService()
-            let decodedToken: TokenPayload
 
             if (!req.headers.authorization && required) {
                const exception = ExceptionFactory.unauthorized()
@@ -29,18 +27,8 @@ export class Auth {
             }
 
             const accessToken = req.headers.authorization.split(' ')[1]
+            let decodedToken: TokenPayload
             let isRevoked = false
-
-            try {
-               isRevoked = await accessTokenService.isTokenRevoked(accessToken)
-            } catch (err) {
-               return next(err)
-            }
-
-            if (isRevoked) {
-               const exception = ExceptionFactory.tokenAlreadyUsed('Access Token Token already used')
-               return res.status(exception.status).json(exception.toJSON())
-            }
 
             try {
                const decodeResult = accessTokenService.decodeToken(accessToken)
@@ -60,14 +48,21 @@ export class Auth {
                return next(error)
             }
 
-            const token = accessTokenService.generateJWT(
-               { user_id: decodedToken.user_id, user_uuid: decodedToken.user_uuid },
-               { expiresIn: 3600 }
-            )
+            try {
+               isRevoked = await accessTokenService.isTokenRevoked(accessToken)
+            } catch (err) {
+               return next(err)
+            }
+
+            if (isRevoked) {
+               const exception = ExceptionFactory.tokenAlreadyUsed('Access Token Token already used')
+               return res.status(exception.status).json(exception.toJSON())
+            }
 
             try {
                await accessTokenService.revokeAccessToken(
-                  accessToken, 'logout',
+                  accessToken, 
+                  'consumed',
                   decodedToken.jwtId,
                   decodedToken.user_id,
                   decodedToken.exp
@@ -81,7 +76,6 @@ export class Auth {
                user_uuid: decodedToken.user_uuid
             }
 
-            res.cookie('access_token', token, { httpOnly: true, maxAge: 3600 })
             return await target.call(this, req, res, next)
          }
       }

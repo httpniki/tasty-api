@@ -21,6 +21,18 @@ export default class AccessTokenService {
 
       try {
          result.payload = jwt.verify(token, process.env.AUTH_TOKEN_PRIVATE_KEY as string) as TokenPayload
+
+         if (!result.payload.exp) {
+            result.error_name = 'invalid_access_token'
+            result.message = 'Invalid access token'
+            return result
+         }
+
+         if (!result.payload.jwtId) {
+            result.error_name = 'invalid_access_token'
+            result.message = 'Invalid access token'
+            return result
+         }
       } catch (err) {
          if (err instanceof jwt.TokenExpiredError) {
             result.error_name = 'expired_access_token'
@@ -56,7 +68,7 @@ export default class AccessTokenService {
    **/
    public async revokeAccessToken(
       token: string,
-      reason: 'logout' | 'refresh' | 'admin' = 'refresh',
+      reason: IRevokedToken['reason'],
       jwtId: string,
       userId: string,
       expiresAt: number
