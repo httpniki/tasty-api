@@ -6,6 +6,9 @@ import express, { json, type NextFunction, type Request, type Response } from 'e
 import morgan from 'morgan'
 import { Server as WebSocketServer } from 'socket.io'
 
+import ChatRouter from '@/chat/chat.router.js'
+import ChatSocket from '@/chat/chat.socket.js'
+
 import AuthRouter from './src/auth/auth.router.js'
 import ServerConfig from './src/config/config.js'
 import createUserFilesFolder from './src/config/createUserFilesFolder.js'
@@ -29,9 +32,11 @@ declare module 'express' {
 class ServerBootstrap extends ServerConfig {
    public app: express.Application = express()
    public httpServer = createServer(this.app)
-   public socket = new WebSocketServer(this.httpServer, {
+   public io = new WebSocketServer(this.httpServer, {
       cors: { origin: this.CLIENT_ORIGIN },
-      cookie: true
+      cookie: true,
+      pingTimeout: 60000,
+      pingInterval: 30000
    })
 
    constructor() {
@@ -64,9 +69,9 @@ class ServerBootstrap extends ServerConfig {
          return res.status(exception.status).json(exception.toJSON())
       })
 
-      this.socket.setMaxListeners(0)
-      // new Sockets(this.socket)
+      this.io.setMaxListeners(0)
 
+      this.initSocket()
       this.listen()
    }
 
@@ -76,8 +81,12 @@ class ServerBootstrap extends ServerConfig {
          new PostRouter().router,
          new AuthRouter().router,
          new ImageRouter().router,
-         // new MessageRouter().router
+         new ChatRouter().router
       ]
+   }
+
+   private initSocket(): void {
+      new ChatSocket(this.io)
    }
 
    private initDB(): void {

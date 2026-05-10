@@ -13,6 +13,7 @@ export interface IUser {
    encrypted_password: string
    password?: string
    posts: { uuid: string, type: string }[]
+   chats: { uuid: string, users: [string, string] }[]
    follows: string[]
    followers: string[]
    created_at: Date
@@ -22,6 +23,11 @@ export interface IUser {
 const UserPostSchema = new Schema({
    uuid: { type: String, required: true },
    type: { type: String, required: true }
+}, { _id: false })
+
+const UserChatSchema = new Schema<IUser['chats'][number]>({
+   uuid: { type: String, required: true },
+   users: { type: [String, String], required: true }
 }, { _id: false })
 
 export const UserSchema = new Schema<IUser>({
@@ -75,6 +81,7 @@ export const UserSchema = new Schema<IUser>({
       required: [true, 'Password is required'],
    },
    posts: [UserPostSchema],
+   chats: [UserChatSchema],
    follows: [String],
    followers: [String],
    created_at: {

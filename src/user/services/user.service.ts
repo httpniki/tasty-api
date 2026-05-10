@@ -41,6 +41,7 @@ export default class UserService {
       name: true,
       email: true,
       posts: true,
+      chats: true,
       follows: true,
       followers: true,
       created_at: true,
@@ -146,7 +147,7 @@ export default class UserService {
       @throws ServiceError.InvalidInput
       @throws ServiceError.DatabaseError
    **/
-   async updateUser(id: User['_id'], data: Partial<User>) {
+   async updateUser(id: string, data: Partial<Omit<User, 'uuid' | 'password' | 'encrypted_password' | '_id'>>) {
       try {
          await UserModel.findByIdAndUpdate({ _id: id }, { $set: data }, { runValidators: true })
       } catch (error) {
@@ -199,8 +200,8 @@ export default class UserService {
       }
 
       try {
-         await this.updateUser(user._id, { follows: user.follows })
-         await this.updateUser(target._id, { followers: target.followers })
+         await this.updateUser(user._id.toString(), { follows: user.follows })
+         await this.updateUser(target._id.toString(), { followers: target.followers })
       } catch (error) {
          throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
       }
