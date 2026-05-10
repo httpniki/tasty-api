@@ -4,6 +4,7 @@ import { type DefaultEventsMap } from 'socket.io/dist/typed-events'
 import AccessTokenService from '@/auth/services/access_token.service'
 import { type TokenPayload } from '@/auth/types/types'
 import ServiceError from '@/shared/errors/ServiceError'
+import { SocketExceptionFactory } from '@/shared/response/socket/SocketExceptionFactory'
 import UserService, { type User } from '@/user/services/user.service'
 
 import ChatService, { type Chat } from './services/chat.service'
@@ -12,14 +13,6 @@ interface MessageBody {
    message: string
    from: string
    to: string
-}
-
-class SocketError extends Error {
-   data: { message: string, error_name: string }
-   constructor(message: string, data: { message: string, error_name: string }) {
-      super(message)
-      this.data = data
-   }
 }
 
 export default class ChatSocket {
@@ -42,24 +35,28 @@ export default class ChatSocket {
             const decodedToken = this.accessTokenService.decodeToken(token)
 
             if (decodedToken.error_name === 'expired_access_token') {
-               return next(new SocketError('Expired access token', { message: 'Expired access token', error_name: 'expired_access_token' }))
+               const exception = SocketExceptionFactory.expiredAccessToken()
+               return next(exception)
             }
 
             if (decodedToken.error_name === 'invalid_access_token') {
-               return next(new SocketError('Invalid access token', { message: 'Invalid access token', error_name: 'invalid_access_token' }))
+               const exception = SocketExceptionFactory.invalidAccessToken()
+               return next(exception)
             }
 
             tokenPayload = decodedToken.payload
          } catch (err) {
             console.error(err)
-            return next(new SocketError('Internal Server Error', { message: 'Internal Server Error', error_name: 'INTERNAL_SERVER_ERROR' }))
+            const exception = SocketExceptionFactory.internalServerError()
+            return next(exception)
          }
 
          try {
             const isRevoked = await this.accessTokenService.isTokenRevoked(token)
 
-            if(isRevoked) {
-               return next(new SocketError('Token already used', { message: 'Token already used', error_name: 'token_already_used' }))
+            if (isRevoked) {
+               const exception = SocketExceptionFactory.tokenAlreadyUsed()
+               return next(exception)
             }
 
             await this.accessTokenService.revokeAccessToken(
@@ -71,7 +68,8 @@ export default class ChatSocket {
             )
          } catch (err) {
             console.error(err)
-            return next(new SocketError('Internal Server Error', { message: 'Internal Server Error', error_name: 'INTERNAL_SERVER_ERROR' }))
+            const exception = SocketExceptionFactory.internalServerError()
+            return next(exception)
          }
 
          this.connections.set(tokenPayload.user_uuid, socket.id)
@@ -95,21 +93,25 @@ export default class ChatSocket {
                target = await this.userService.findUser({ uuid: to })
             } catch (err) {
                console.error(err)
+               const exception = SocketExceptionFactory.internalServerError()
                return socket
                   .to(this.connections.get(from))
-                  .emit('error', { message: 'Internal Server Error', error_name: 'INTERNAL_SERVER_ERROR' })
+                  .emit('error', exception.data)
             }
 
             if (!current) {
+               console.error('current user not found')
+               const exception = SocketExceptionFactory.internalServerError()
                return socket
                   .to(this.connections.get(from))
-                  .emit('error', { message: 'Internal Server Error', error_name: 'INTERNAL_SERVER_ERROR' })
+                  .emit('error', exception.data)
             }
 
             if (!target) {
+               const exception = SocketExceptionFactory.notFound()
                return socket
                   .to(this.connections.get(from))
-                  .emit('error', { message: 'User not found', 'error_name': 'not_found' })
+                  .emit('error', exception.data)
             }
 
             let chat: Chat | null = null
@@ -119,16 +121,17 @@ export default class ChatSocket {
                if (!chat) chat = await this.chatService.createConversation(current._id.toString(), target._id.toString())
             } catch (err) {
                if (err instanceof ServiceError) {
+                  const exception = { message: err.message, error_name: err.name }
                   return socket
                      .to(this.connections.get(from))
-                     .emit('error', { message: err.message, error_name: err.name })
+                     .emit('error', exception)
                }
 
                console.error(err)
-
+               const exception = SocketExceptionFactory.internalServerError()
                return socket
                   .to(this.connections.get(from))
-                  .emit('error', { message: 'Internal Server Error', error_name: 'INTERNAL_SERVER_ERROR' })
+                  .emit('error', exception.data)
             }
 
             try {
@@ -136,9 +139,10 @@ export default class ChatSocket {
             } catch (err) {
                console.error(err)
 
+               const exception = SocketExceptionFactory.internalServerError()
                return socket
                   .to(this.connections.get(from))
-                  .emit('error', { message: 'Internal Server Error', error_name: 'INTERNAL_SERVER_ERROR' })
+                  .emit('error', exception.data)
             }
 
             if (this.connections.has(to)) {

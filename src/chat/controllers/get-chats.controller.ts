@@ -1,7 +1,6 @@
 import { type NextFunction, type Request, type Response } from 'express'
 import { type ParamsDictionary } from 'express-serve-static-core'
 
-import ApiException from '@/shared/response/http/ApiException'
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 import PaginatedResponse, { Paging } from '@/shared/response/http/PaginatedResponse'
 import UserService, { type User as UserServiceType } from '@/user/services/user.service'
