@@ -91,10 +91,11 @@ export default class AccessTokenService {
       @throws ServiceError.DatabaseError
    **/
    public async isTokenRevoked(token: string): Promise<boolean> {
-      let isRevoked: IRevokedToken | null = null
+      let isRevoked: boolean | null = null
 
       try {
-         isRevoked = await RevokedTokenModel.findOne({ token })
+         const result = await RevokedTokenModel.findOne({ token })
+         isRevoked = !!result
       } catch (err) {
          throw new ServiceError(ServiceErrorName.DatabaseError, err.message, err)
       }
