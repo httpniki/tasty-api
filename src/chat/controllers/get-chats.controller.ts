@@ -92,7 +92,9 @@ export default class GetChatsController {
             content: message.content,
             timestamp: message.timestamp,
             user: userDTO,
-            read: message.read
+            read: message.read,
+            deleted: message.deleted,
+            deletedAt: message.deletedAt
          })
 
          return msg

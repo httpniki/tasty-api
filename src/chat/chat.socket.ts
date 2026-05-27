@@ -6,6 +6,7 @@ import AccessTokenService from '@/auth/services/access_token.service'
 import { type TokenPayload } from '@/auth/types/types'
 import { SocketExceptionFactory } from '@/shared/response/socket/SocketExceptionFactory'
 
+import DeleteMessageEvent from './socket/events/delete-message.socket'
 import ReadMessageEvent from './socket/events/read-message.socket'
 import SendMessageEvent from './socket/events/send-message.socket'
 
@@ -80,6 +81,7 @@ export default class ChatSocket {
 
          io.on('message:send', async (body: ConstructorParameters<typeof SendMessageEvent>[0]) => new SendMessageEvent(body, io, this.connections))
          io.on('message:read', (body: ConstructorParameters<typeof ReadMessageEvent>[0]) => new ReadMessageEvent(body, io, this.connections))
+         io.on('message:delete', (body: ConstructorParameters<typeof DeleteMessageEvent>[0]) => new DeleteMessageEvent(body, io, this.connections))
          io.on('disconnect', () => this.connections.delete(user_uuid))
       })
    }

@@ -4,11 +4,11 @@ import MessageService from '@/chat/services/message.service'
 import { SocketExceptionFactory } from '@/shared/response/socket/SocketExceptionFactory'
 
 interface RequestBody {
-   message_uuid: string
    chat_uuid: string
+   message_uuid: string
 }
 
-export default class ReadMessageEvent {
+export default class DeleteMessageEvent {
    private readonly socket: SocketType
    private readonly connections: Map<string, string>
    private readonly chatService: ChatService = new ChatService()
@@ -17,10 +17,10 @@ export default class ReadMessageEvent {
    constructor(body: RequestBody, socket: SocketType, connections: Map<string, string>) {
       this.socket = socket
       this.connections = connections
-      this.readMessage(body)
+      this.deleteMessage(body)
    }
 
-   private async readMessage({ chat_uuid, message_uuid }: RequestBody) {
+   private async deleteMessage({ chat_uuid, message_uuid }: RequestBody) {
       const userUuid = this.socket.data.user_uuid
       const usersConnections = [this.connections.get(userUuid)]
 
@@ -41,10 +41,8 @@ export default class ReadMessageEvent {
             if (!connection || usersConnections.some((el) => el === connection)) return
             usersConnections.push(connection)
          })
-      } catch (err: any) {
+      } catch {
          const exception = SocketExceptionFactory.internalServerError()
-         console.error(err)
-
          return this.socket
             .to(usersConnections[0])
             .emit('error', exception.data)
@@ -60,7 +58,7 @@ export default class ReadMessageEvent {
       }
 
       if (targetMessage.user_id !== userUuid) {
-         const exception = SocketExceptionFactory.invalidInput('You can only read your own messages')
+         const exception = SocketExceptionFactory.invalidInput('You can only delete your own messages')
          return this.socket
             .to(usersConnections[0])
             .emit('error', exception.data)
@@ -69,8 +67,8 @@ export default class ReadMessageEvent {
       let updatedMessage: Message
 
       try {
-         updatedMessage = await this.messageService.readMessage(message_uuid)
-      } catch (err) {
+         updatedMessage = await this.messageService.deleteMessage(message_uuid)
+      } catch (err: any) {
          console.error(err)
 
          const exception = SocketExceptionFactory.internalServerError()
@@ -84,4 +82,3 @@ export default class ReadMessageEvent {
          .emit('message:updated', { message: updatedMessage })
    }
 }
-

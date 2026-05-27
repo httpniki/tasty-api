@@ -3,9 +3,11 @@ import { model, Schema, Types } from 'mongoose'
 interface IMessage {
    uuid: string
    user_id: string
-   content: string
+   content: string | null
    timestamp: Date
    read: boolean
+   deleted: boolean
+   deletedAt: Date | null
 }
 
 interface IChat {
@@ -27,7 +29,7 @@ const MessageSchema = new Schema<IMessage>({
    },
    content: {
       type: String,
-      require: [true, 'Message content is required']
+      default: null
    },
    timestamp: {
       type: Date,
@@ -36,6 +38,14 @@ const MessageSchema = new Schema<IMessage>({
    read: {
       type: Boolean,
       default: false
+   },
+   deleted: {
+      type: Boolean,
+      default: false
+   },
+   deletedAt: {
+      type: Date,
+      default: null
    }
 })
 
