@@ -5,6 +5,7 @@ interface IMessage {
    user_id: string
    content: string
    timestamp: Date
+   read: boolean
 }
 
 interface IChat {
@@ -31,6 +32,10 @@ const MessageSchema = new Schema<IMessage>({
    timestamp: {
       type: Date,
       default: Date.now
+   },
+   read: {
+      type: Boolean,
+      default: false
    }
 })
 

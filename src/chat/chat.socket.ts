@@ -1,27 +1,21 @@
 import { type Namespace, type Server } from 'socket.io'
+import { type Socket } from 'socket.io'
 import { type DefaultEventsMap } from 'socket.io/dist/typed-events'
 
 import AccessTokenService from '@/auth/services/access_token.service'
 import { type TokenPayload } from '@/auth/types/types'
-import ServiceError from '@/shared/errors/ServiceError'
 import { SocketExceptionFactory } from '@/shared/response/socket/SocketExceptionFactory'
-import UserService, { type User } from '@/user/services/user.service'
 
-import ChatService, { type Chat } from './services/chat.service'
+import ReadMessageEvent from './socket/events/read-message.socket'
+import SendMessageEvent from './socket/events/send-message.socket'
 
-interface MessageBody {
-   message: string
-   from: string
-   to: string
-}
+export type SocketType = Socket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, { user_uuid: string }>
 
 export default class ChatSocket {
    private readonly server: Server
    private namespace: Namespace<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, { user_uuid: string }>
    private connections: Map<string, string> = new Map<string, string>()
    private accessTokenService = new AccessTokenService()
-   private userService = new UserService()
-   private chatService = new ChatService()
 
    constructor(socket: Server) {
       this.server = socket
@@ -81,80 +75,12 @@ export default class ChatSocket {
    }
 
    private initialConnection() {
-      this.namespace.on('connection', (socket) => {
-         const user_uuid = socket.data.user_uuid
+      this.namespace.on('connection', (io) => {
+         const user_uuid = io.data.user_uuid
 
-         socket.on('send', async ({ message, from, to }: MessageBody) => {
-            let current: User | null = null
-            let target: User | null = null
-
-            try {
-               current = await this.userService.findUser({ uuid: user_uuid })
-               target = await this.userService.findUser({ uuid: to })
-            } catch (err) {
-               console.error(err)
-               const exception = SocketExceptionFactory.internalServerError()
-               return socket
-                  .to(this.connections.get(from))
-                  .emit('error', exception.data)
-            }
-
-            if (!current) {
-               console.error('current user not found')
-               const exception = SocketExceptionFactory.internalServerError()
-               return socket
-                  .to(this.connections.get(from))
-                  .emit('error', exception.data)
-            }
-
-            if (!target) {
-               const exception = SocketExceptionFactory.notFound()
-               return socket
-                  .to(this.connections.get(from))
-                  .emit('error', exception.data)
-            }
-
-            let chat: Chat | null = null
-
-            try {
-               chat = await this.chatService.findConversation({ user_uuids: [current.uuid, target.uuid] })
-               if (!chat) chat = await this.chatService.createConversation(current._id.toString(), target._id.toString())
-            } catch (err) {
-               if (err instanceof ServiceError) {
-                  const exception = { message: err.message, error_name: err.name }
-                  return socket
-                     .to(this.connections.get(from))
-                     .emit('error', exception)
-               }
-
-               console.error(err)
-               const exception = SocketExceptionFactory.internalServerError()
-               return socket
-                  .to(this.connections.get(from))
-                  .emit('error', exception.data)
-            }
-
-            try {
-               await this.chatService.addMessage(chat.uuid, { user_id: current.uuid, content: message })
-            } catch (err) {
-               console.error(err)
-
-               const exception = SocketExceptionFactory.internalServerError()
-               return socket
-                  .to(this.connections.get(from))
-                  .emit('error', exception.data)
-            }
-
-            if (this.connections.has(to)) {
-               socket
-                  .to(this.connections.get(to))
-                  .emit('receive', { message, from, to })
-            }
-         })
-
-         socket.on('disconnect', () => {
-            this.connections.delete(user_uuid)
-         })
+         io.on('message:send', async (body: ConstructorParameters<typeof SendMessageEvent>[0]) => new SendMessageEvent(body, io, this.connections))
+         io.on('message:read', (body: ConstructorParameters<typeof ReadMessageEvent>[0]) => new ReadMessageEvent(body, io, this.connections))
+         io.on('disconnect', () => this.connections.delete(user_uuid))
       })
    }
 }

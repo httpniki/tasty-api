@@ -87,12 +87,15 @@ export default class GetChatsController {
             avatar: user.avatar
          })
 
-         return new Message({
+         const msg = new Message({
             uuid: message.uuid,
             content: message.content,
             timestamp: message.timestamp,
-            user: userDTO
+            user: userDTO,
+            read: message.read
          })
+
+         return msg
       })
 
       return await Promise.all(promise)

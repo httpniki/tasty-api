@@ -15,4 +15,7 @@ export class SocketExceptionFactory {
 
    static readonly notFound = (message: string = 'User not found'): SocketError =>
       new SocketError({ message, error_name: 'not_found' })
+
+   static readonly invalidInput = (message: string = 'Invalid input'): SocketError =>
+      new SocketError({ message, error_name: 'invalid_input' })
 }
