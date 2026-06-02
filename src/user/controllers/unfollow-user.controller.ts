@@ -52,6 +52,11 @@ export default class UnfollowUserController {
       if (!this.req.session) return this.next(new Error('Session not found'))
       const currentId = this.req.session.user_id
 
+      if (currentId === targetId) {
+         const exception = ExceptionFactory.invalidParam('You cannot unfollow yourself')
+         return this.res.status(exception.status).json(exception.toJSON())
+      }
+
       try {
          await this.userService.syncUserRelationship(currentId, targetId, 'UNFOLLOW')
       } catch (error) {
