@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid'
 
 import ChatModel, { type IMessage } from '../models/chat.model'
-import { type Chat, type Message } from './chat.service'
+import { type Message } from './chat.service'
 
 export default class MessageService {
    private projection = {
@@ -111,7 +111,7 @@ export default class MessageService {
       return msgCopy
    }
 
-   async addMessage(chatUuid: string, messageData: { user_id: string; content: string }): Promise<Chat> {
+   async addMessage(chatUuid: string, messageData: { user_id: string; content: string }): Promise<Message> {
       const newMessage: IMessage = {
          uuid: uuid(),
          user_id: messageData.user_id,
@@ -122,7 +122,7 @@ export default class MessageService {
          deletedAt: null
       }
 
-      const updatedChat = await ChatModel
+      await ChatModel
          .findOneAndUpdate(
             { uuid: chatUuid },
             { $push: { messages: newMessage } },
@@ -130,6 +130,14 @@ export default class MessageService {
          )
          .select(this.projection)
 
-      return updatedChat.toObject()
+      return {
+         uuid: newMessage.uuid,
+         content: newMessage.content,
+         timestamp: newMessage.timestamp,
+         user_id: newMessage.user_id,
+         read: newMessage.read,
+         deleted: newMessage.deleted,
+         deletedAt: newMessage.deletedAt
+      }
    }
 }
