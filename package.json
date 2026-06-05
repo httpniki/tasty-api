@@ -28,6 +28,7 @@
 		"uuid": "9.0.1"
 	},
 	"devDependencies": {
+		"@inquirer/prompts": "7.10.1",
 		"@stylistic/eslint-plugin-js": "1.6.3",
 		"@stylistic/eslint-plugin-ts": "1.6.3",
 		"@types/bcrypt": "5.0.0",
@@ -50,6 +51,7 @@
 		"module-alias": "^2.3.4",
 		"morgan": "1.10.0",
 		"npm": "10.5.0",
+		"socket.io-client": "4.8.3",
 		"supertest": "^7.2.2",
 		"ts-jest": "^29.4.6",
 		"tsx": "^4.21.0",
