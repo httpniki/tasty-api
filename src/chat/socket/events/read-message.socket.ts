@@ -20,14 +20,14 @@ export default class ReadMessageEvent {
       this.readMessage(body)
    }
 
-   private async readMessage({ chat_uuid, message_uuid }: RequestBody) {
+   private async readMessage({ message_uuid }: RequestBody) {
       const userUuid = this.socket.data.user_uuid
       const usersConnections = [this.connections.get(userUuid)]
 
       let chat: Chat
 
       try {
-         chat = await this.chatService.findConversation({ uuid: chat_uuid })
+         chat = await this.chatService.findConversation({ message_uuid })
 
          if (!chat) {
             const chatError = new ChatError(ErrorName.NOT_FOUND, 'Chat not found')
@@ -65,6 +65,7 @@ export default class ReadMessageEvent {
             .emit('exception', chatError.toJSON())
       }
 
+      if (targetMessage.read) return
       let updatedMessage: Message
 
       try {

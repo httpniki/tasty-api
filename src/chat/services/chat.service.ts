@@ -15,6 +15,7 @@ interface FindConversationArgs {
    uuid?: string
    user_ids?: [string, string]
    user_uuids?: [string, string]
+   message_uuid?: string
 }
 
 export default class ChatService {
@@ -81,6 +82,15 @@ export default class ChatService {
                   { users: user2._id }
                ]
             })
+            .select(this.projection)
+
+         if (result) chat = result.toObject()
+      }
+
+      if (args.message_uuid) {
+         const result = await ChatModel
+            .findOne()
+            .where({ 'messages.uuid': args.message_uuid })
             .select(this.projection)
 
          if (result) chat = result.toObject()

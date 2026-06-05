@@ -111,6 +111,32 @@ export default class MessageService {
       return msgCopy
    }
 
+   /**
+      @throws message_not_found
+   **/
+   async findMessage(messageUuid: string): Promise<Message> {
+      const chat = await ChatModel
+         .findOne()
+         .where({ 'messages.uuid': messageUuid })
+         .select({ ...this.projection })
+
+      if (!chat) {
+         const err = new Error('Message not found')
+         err.name = 'message_not_found'
+         throw err
+      }
+
+      const message = chat.messages.find(m => m.uuid === messageUuid)
+
+      if (!message) {
+         const err = new Error('Message not found')
+         err.name = 'message_not_found'
+         throw err
+      }
+
+      return message
+   }
+
    async addMessage(chatUuid: string, messageData: { user_id: string; content: string }): Promise<Message> {
       const newMessage: IMessage = {
          uuid: uuid(),

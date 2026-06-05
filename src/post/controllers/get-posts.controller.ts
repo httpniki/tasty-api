@@ -31,7 +31,7 @@ export default class GetPostsController {
    }
 
    // ?user_uuid=5f81c3d7c4b0d1d4d0e0f1f2 return all posts of user
-   // ?user_uuid&follows=true return posts of user follows
+   // ?follows=true return posts of user follows
    private async execute() {
       const { user: user_uuid, page = 1, limit = 20 } = this.req.query
       let posts: Post[] = []
