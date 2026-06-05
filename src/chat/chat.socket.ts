@@ -4,7 +4,7 @@ import { type DefaultEventsMap } from 'socket.io/dist/typed-events'
 
 import AccessTokenService from '@/auth/services/access_token.service'
 import { type TokenPayload } from '@/auth/types/types'
-import { SocketExceptionFactory } from '@/shared/response/socket/SocketExceptionFactory'
+import ChatError, { ErrorName } from '@/chat/dto/ChatError'
 
 import DeleteMessageEvent from './socket/events/delete-message.socket'
 import ReadMessageEvent from './socket/events/read-message.socket'
@@ -30,28 +30,27 @@ export default class ChatSocket {
             const decodedToken = this.accessTokenService.decodeToken(token)
 
             if (decodedToken.error_name === 'expired_access_token') {
-               const exception = SocketExceptionFactory.expiredAccessToken()
-               return next(exception)
+               const err = new ChatError(ErrorName.EXPIRED_ACCESS_TOKEN, 'Expired access token')
+               return next(err.toNativeError())
             }
 
             if (decodedToken.error_name === 'invalid_access_token') {
-               const exception = SocketExceptionFactory.invalidAccessToken()
-               return next(exception)
+               const err = new ChatError(ErrorName.INVALID_ACCESS_TOKEN, 'Invalid access token')
+               return next(err.toNativeError())
             }
 
             tokenPayload = decodedToken.payload
-         } catch (err) {
-            console.error(err)
-            const exception = SocketExceptionFactory.internalServerError()
-            return next(exception)
+         } catch (err: unknown) {
+            const chatError = new ChatError(ErrorName.INTERNAL_SERVER_ERROR, 'Internal Server Error', err)
+            return next(chatError.toNativeError())
          }
 
          try {
             const isRevoked = await this.accessTokenService.isTokenRevoked(token)
 
             if (isRevoked) {
-               const exception = SocketExceptionFactory.tokenAlreadyUsed()
-               return next(exception)
+               const err = new ChatError(ErrorName.TOKEN_ALREADY_USED, 'Token already used')
+               return next(err.toNativeError())
             }
 
             await this.accessTokenService.revokeAccessToken(
@@ -61,10 +60,9 @@ export default class ChatSocket {
                tokenPayload.user_id,
                tokenPayload.exp
             )
-         } catch (err) {
-            console.error(err)
-            const exception = SocketExceptionFactory.internalServerError()
-            return next(exception)
+         } catch (err: unknown) {
+            const chatError = new ChatError(ErrorName.INTERNAL_SERVER_ERROR, 'Internal Server Error', err)
+            return next(chatError.toNativeError())
          }
 
          this.connections.set(tokenPayload.user_uuid, socket.id)

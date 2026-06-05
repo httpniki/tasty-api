@@ -1,9 +1,9 @@
 import { type SocketType } from '@/chat/chat.socket'
+import ChatError, { ErrorName } from '@/chat/dto/ChatError'
 import Message from '@/chat/dto/Message'
 import User from '@/chat/dto/User'
 import ChatService, { type Chat, type Message as MessageType } from '@/chat/services/chat.service'
 import MessageService from '@/chat/services/message.service'
-import { SocketExceptionFactory } from '@/shared/response/socket/SocketExceptionFactory'
 import UserService, { type User as UserType } from '@/user/services/user.service'
 
 interface RequestBody {
@@ -34,47 +34,46 @@ export default class SendMessageEvent {
       try {
          current = await this.userService.findUser({ uuid: user_uuid })
          target = await this.userService.findUser({ uuid: to })
-      } catch {
-         const exception = SocketExceptionFactory.internalServerError()
+      } catch (err: unknown) {
+         const chatError = new ChatError(ErrorName.INTERNAL_SERVER_ERROR, 'Internal Server Error', err)
          return this.socket
             .to(this.connections.get(from))
-            .emit('error', exception.data)
+            .emit('exception', chatError.toJSON())
       }
 
       if (!current) {
-         const exception = SocketExceptionFactory.internalServerError()
+         const chatError = new ChatError(ErrorName.INTERNAL_SERVER_ERROR, 'Internal Server Error')
          return this.socket
             .to(this.connections.get(from))
-            .emit('error', exception.data)
+            .emit('exception', chatError.toJSON())
       }
 
       if (!target) {
-         const exception = SocketExceptionFactory.notFound()
+         const chatError = new ChatError(ErrorName.NOT_FOUND, 'User not found')
          return this.socket
             .to(this.connections.get(from))
-            .emit('error', exception.data)
+            .emit('exception', chatError.toJSON())
       }
 
       try {
          chat = await this.chatService.findConversation({ user_uuids: [current.uuid, target.uuid] })
          if (!chat) chat = await this.chatService.createConversation(current._id.toString(), target._id.toString())
-      } catch {
-         const exception = SocketExceptionFactory.internalServerError()
+      } catch (err: unknown) {
+         const chatError = new ChatError(ErrorName.INTERNAL_SERVER_ERROR, 'Internal Server Error', err)
          return this.socket
             .to(this.connections.get(from))
-            .emit('error', exception.data)
+            .emit('exception', chatError.toJSON())
       }
 
       let msg: MessageType | null = null
-      const user: User | null = null
 
       try {
          msg = await this.messageService.addMessage(chat.uuid, { user_id: current.uuid, content: message })
-      } catch {
-         const exception = SocketExceptionFactory.internalServerError()
+      } catch (err: unknown) {
+         const chatError = new ChatError(ErrorName.INTERNAL_SERVER_ERROR, 'Internal Server Error', err)
          return this.socket
             .to(this.connections.get(from))
-            .emit('error', exception.data)
+            .emit('exception', chatError.toJSON())
       }
 
       if (this.connections.has(to)) {

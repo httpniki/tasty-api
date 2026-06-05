@@ -1,7 +1,7 @@
 import { type SocketType } from '@/chat/chat.socket'
+import ChatError, { ErrorName } from '@/chat/dto/ChatError'
 import ChatService, { type Chat, type Message } from '@/chat/services/chat.service'
 import MessageService from '@/chat/services/message.service'
-import { SocketExceptionFactory } from '@/shared/response/socket/SocketExceptionFactory'
 
 interface RequestBody {
    message_uuid: string
@@ -30,10 +30,10 @@ export default class ReadMessageEvent {
          chat = await this.chatService.findConversation({ uuid: chat_uuid })
 
          if (!chat) {
-            const exception = SocketExceptionFactory.notFound('Chat not found')
+            const chatError = new ChatError(ErrorName.NOT_FOUND, 'Chat not found')
             return this.socket
                .to(usersConnections[0])
-               .emit('error', exception.data)
+               .emit('exception', chatError.toJSON())
          }
 
          chat.users.forEach(user => {
@@ -41,42 +41,40 @@ export default class ReadMessageEvent {
             if (!connection || usersConnections.some((el) => el === connection)) return
             usersConnections.push(connection)
          })
-      } catch (err: any) {
-         const exception = SocketExceptionFactory.internalServerError()
-         console.error(err)
+      } catch (err: unknown) {
+         const chatError = new ChatError(ErrorName.INTERNAL_SERVER_ERROR, 'Internal Server Error', err)
 
          return this.socket
             .to(usersConnections[0])
-            .emit('error', exception.data)
+            .emit('exception', chatError.toJSON())
       }
 
       const targetMessage = chat.messages.find(m => m.uuid === message_uuid)
 
       if (!targetMessage) {
-         const exception = SocketExceptionFactory.notFound('Message not found')
+         const chatError = new ChatError(ErrorName.NOT_FOUND, 'Message not found')
          return this.socket
             .to(usersConnections[0])
-            .emit('error', exception.data)
+            .emit('exception', chatError.toJSON())
       }
 
       if (targetMessage.user_id !== userUuid) {
-         const exception = SocketExceptionFactory.invalidInput('You can only read your own messages')
+         const chatError = new ChatError(ErrorName.INVALID_INPUT, 'You can only read your own messages')
          return this.socket
             .to(usersConnections[0])
-            .emit('error', exception.data)
+            .emit('exception', chatError.toJSON())
       }
 
       let updatedMessage: Message
 
       try {
          updatedMessage = await this.messageService.readMessage(message_uuid)
-      } catch (err) {
-         console.error(err)
+      } catch (err: unknown) {
+         const chatError = new ChatError(ErrorName.INTERNAL_SERVER_ERROR, 'Internal Server Error', err)
 
-         const exception = SocketExceptionFactory.internalServerError()
          return this.socket
             .to(usersConnections[0])
-            .emit('error', exception.data)
+            .emit('exception', chatError.toJSON())
       }
 
       return this.socket
