@@ -5,7 +5,7 @@ import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 import PaginatedResponse, { Paging } from '@/shared/response/http/PaginatedResponse'
 import UserService, { type User as UserServiceType } from '@/user/services/user.service'
 
-import Chat from '../dto/Chat'
+import Conversation from '../dto/Conversation'
 import Message from '../dto/Message'
 import User from '../dto/User'
 import ChatService, { type Chat as ChatType } from '../services/chat.service'
@@ -35,7 +35,7 @@ export default class GetChatsController {
       const limit = parseInt(this.req.query.limit ?? '5')
       let user: UserServiceType
       let chats: ChatType[]
-      let dto: Chat[]
+      let dto: Conversation[]
 
       if (isNaN(page) || isNaN(limit)) {
          const exception = ExceptionFactory.invalidParam('page and limit must be numbers')
@@ -58,7 +58,7 @@ export default class GetChatsController {
 
       try {
          chats = await this.getChats(user.chats.slice((page - 1) * limit, page * limit))
-         dto = await Promise.all(chats.map(async (chat) => await this.transformChatToDTO(chat)))
+         dto = await Promise.all(chats.map(async (chat) => await this.transformChatToConversation(chat)))
       } catch (error) {
          return this.next(error)
       }
@@ -74,42 +74,57 @@ export default class GetChatsController {
       return await Promise.all(chatPromise)
    }
 
-   private async transformMessageToDTO(messages: ChatType['messages']): Promise<Message[]> {
-      const promise = messages.map(async (message) => {
-         const user = await this.userService.findUser({ uuid: message.user_id })
+   private async getUsersFromChat(chat: ChatType): Promise<User[]> {
+      return await Promise.all(
+         chat.users.map(async (userId) => {
+            const user = await this.userService.findUser({ _id: userId.toString() })
+            if (!user) throw new Error('Chat user not found')
 
-         if (!user) throw new Error('User not found')
-
-         const userDTO = new User({
-            uuid: user.uuid,
-            name: user.name,
-            username: user.username,
-            avatar: user.avatar
+            return new User({
+               uuid: user.uuid,
+               name: user.name,
+               username: user.username,
+               avatar: user.avatar
+            })
          })
-
-         const msg = new Message({
-            uuid: message.uuid,
-            content: message.content,
-            timestamp: message.timestamp,
-            user: userDTO,
-            read: message.read,
-            deleted: message.deleted,
-            deletedAt: message.deletedAt
-         })
-
-         return msg
-      })
-
-      return await Promise.all(promise)
+      )
    }
 
-   private async transformChatToDTO(chat: ChatType): Promise<Chat> {
-      const parsedMessages = await this.transformMessageToDTO(chat.messages)
+   private async getLastMessageFromChat(chat: ChatType): Promise<Message> {
+      const last = chat.messages[chat.messages.length - 1]
+      if (!last) throw new Error('Chat has no messages')
 
-      return new Chat({
+      const user = await this.userService.findUser({ uuid: last.user_id })
+      if (!user) throw new Error('Last message user not found')
+
+      const userDTO = new User({
+         uuid: user.uuid,
+         name: user.name,
+         username: user.username,
+         avatar: user.avatar
+      })
+
+      return new Message({
+         uuid: last.uuid,
+         content: last.content,
+         timestamp: last.timestamp,
+         user: userDTO,
+         read: last.read,
+         deleted: last.deleted,
+         deletedAt: last.deletedAt
+      })
+   }
+
+   private async transformChatToConversation(chat: ChatType): Promise<Conversation> {
+      const [users, last_message] = await Promise.all([
+         this.getUsersFromChat(chat),
+         this.getLastMessageFromChat(chat)
+      ])
+
+      return new Conversation({
          uuid: chat.uuid,
-         users: chat.users,
-         messages: parsedMessages,
+         users,
+         last_message,
          created_at: chat.created_at
       })
    }

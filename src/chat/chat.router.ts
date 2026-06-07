@@ -10,5 +10,6 @@ export default class ChatRouter extends BaseRouter<ChatMiddleware, ChatControlle
 
    routes(): void {
       this.router.get('/chats', this.controller.getChats)
+      this.router.get('/chats/:id', this.controller.getChat)
    }
 }

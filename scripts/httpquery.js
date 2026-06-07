@@ -174,19 +174,21 @@ async function messageMenu() {
          message: 'Select',
          choices: [
             { name: 'Get chats', value: '1' },
-            { name: 'Send message', value: '2' },
-            { name: 'Read message', value: '3' },
-            { name: 'Delete message', value: '4' },
-            { name: 'Exit', value: '5' }
+            { name: 'Get chat', value: '2' },
+            { name: 'Send message', value: '3' },
+            { name: 'Read message', value: '4' },
+            { name: 'Delete message', value: '5' },
+            { name: 'Exit', value: '6' }
          ]
       })
 
       switch (opt) {
          case '1': await getChats(); break
-         case '2': await sendMessage(socket); break
-         case '3': await readMessage(socket); break
-         case '4': await deleteMessage(socket); break
-         case '5':
+         case '2': await getChat(); break
+         case '3': await sendMessage(socket); break
+         case '4': await readMessage(socket); break
+         case '5': await deleteMessage(socket); break
+         case '6':
             socket.close()
             console.log(pc.bold(pc.red('Exiting...')))
             return
@@ -543,6 +545,21 @@ async function getChats() {
    const limit = await input({ message: 'Limit:', default: '5' })
 
    await request('GET', `${API}/chats?page=${page}&limit=${limit}`, {
+      headers: { Authorization: `Bearer ${token.data.access_token}` }
+   })
+}
+
+async function getChat() {
+   const token = await login()
+
+   console.clear()
+   console.log(pc.bold(pc.magenta('----- Get Chat -----\n')))
+
+   const chatUuid = await input({ message: 'Chat UUID:' })
+   const page = await input({ message: 'Page:', default: '1' })
+   const limit = await input({ message: 'Limit:', default: '20' })
+
+   await request('GET', `${API}/chats/${chatUuid}?page=${page}&limit=${limit}`, {
       headers: { Authorization: `Bearer ${token.data.access_token}` }
    })
 }
