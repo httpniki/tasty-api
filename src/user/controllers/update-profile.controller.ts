@@ -169,7 +169,7 @@ export default class UpdateProfileController {
          if (body.name !== undefined) newUser.name = body.name
          if (body.description !== undefined) newUser.description = body.description
 
-         await this.userService.updateUser(user._id, newUser)
+         await this.userService.updateUser(user._id.toString(), newUser)
       } catch (error) {
          if (error instanceof ServiceError && error.name === ServiceErrorName.InvalidInput) {
             const exception = ExceptionFactory.invalidInput(error.message)
@@ -208,6 +208,6 @@ export default class UpdateProfileController {
          }
       }
 
-      if (Object.keys(newUser).length > 0) await this.userService.updateUser(userId, newUser)
+      if (Object.keys(newUser).length > 0) await this.userService.updateUser(userId.toString(), newUser)
    }
 }

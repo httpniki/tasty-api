@@ -53,7 +53,7 @@ export default class CreatePostController {
       user.posts.push({ uuid: post.uuid, type: 'post' })
 
       try {
-         await this.userService.updateUser(user._id, { posts: user.posts })
+         await this.userService.updateUser(user._id.toString(), { posts: user.posts })
       } catch (error) {
          return this.next(error)
       }
@@ -62,6 +62,7 @@ export default class CreatePostController {
          uuid: post.uuid,
          content: post.content,
          create_at: post.create_at.toString(),
+         type: 'post',
          user: new UserDTO({
             uuid: user.uuid,
             email: user.email,

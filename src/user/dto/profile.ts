@@ -10,7 +10,7 @@ interface ProfileType {
    follows: number
    followers: number
    posts: {
-      type: 'post'
+      type: 'post' | 'repost'
       uuid: string
    }[]
    followed: boolean

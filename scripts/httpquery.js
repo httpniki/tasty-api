@@ -136,8 +136,10 @@ async function postMenu() {
          { name: 'Get Posts', value: '1' },
          { name: 'Get Post', value: '2' },
          { name: 'Create Post', value: '3' },
-         { name: 'Delete Post', value: '4' },
-         { name: 'Exit', value: '5' }
+         { name: 'Repost', value: '4' },
+         { name: 'Delete Repost', value: '5' },
+         { name: 'Delete Post', value: '6' },
+         { name: 'Exit', value: '7' }
       ]
    })
 
@@ -145,8 +147,10 @@ async function postMenu() {
       case '1': await getPosts(); break
       case '2': await getPost(); break
       case '3': await createPost(); break
-      case '4': await deletePost(); break
-      case '5': return
+      case '4': await repostPost(); break
+      case '5': await deleteRepostPost(); break
+      case '6': await deletePost(); break
+      case '7': return
    }
 }
 
@@ -476,6 +480,32 @@ async function createPost() {
 
    await request('POST', `${API}/posts`, {
       body: JSON.stringify({ content }),
+      headers: { Authorization: `Bearer ${token.data.access_token}` }
+   })
+}
+
+async function repostPost() {
+   const token = await login()
+
+   console.clear()
+   console.log(pc.bold(pc.magenta('----- Repost Post -----\n')))
+
+   const postUuid = await input({ message: 'Post UUID:' })
+
+   await request('POST', `${API}/posts/repost/${postUuid}`, {
+      headers: { Authorization: `Bearer ${token.data.access_token}` }
+   })
+}
+
+async function deleteRepostPost() {
+   const token = await login()
+
+   console.clear()
+   console.log(pc.bold(pc.magenta('----- Delete Repost -----\n')))
+
+   const postUuid = await input({ message: 'Post UUID:' })
+
+   await request('DELETE', `${API}/posts/repost/${postUuid}`, {
       headers: { Authorization: `Bearer ${token.data.access_token}` }
    })
 }

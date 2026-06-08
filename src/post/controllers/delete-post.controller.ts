@@ -56,7 +56,7 @@ export default class DeletePostController {
 
       try {
          await this.postService.deletePost(post_uuid)
-         await this.userService.updateUser(user._id, { posts: user.posts.filter(el => el.uuid !== post_uuid) })
+         await this.userService.updateUser(user._id.toString(), { posts: user.posts.filter(el => el.uuid !== post_uuid) })
       } catch (error) {
          return this.next(error)
       }

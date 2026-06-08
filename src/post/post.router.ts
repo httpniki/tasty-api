@@ -12,6 +12,8 @@ export default class PostRouter extends BaseRouter<PostMiddleware, PostControlle
       this.router.get('/posts', this.controller.getPosts)
 
       this.router.post('/posts', this.controller.createPost)
+      this.router.post('/posts/repost/:uuid', this.controller.repost)
+      this.router.delete('/posts/repost/:uuid', this.controller.deleteRepost)
 
       this.router.delete('/posts/:post_uuid', this.controller.deletePost)
    }

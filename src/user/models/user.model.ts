@@ -12,7 +12,7 @@ export interface IUser {
    email: string
    encrypted_password: string
    password?: string
-   posts: { uuid: string, type: string }[]
+   posts: { uuid: string, type: 'post' | 'repost' }[]
    chats: { uuid: string, users: [string, string] }[]
    follows: string[]
    followers: string[]
@@ -22,7 +22,7 @@ export interface IUser {
 
 const UserPostSchema = new Schema({
    uuid: { type: String, required: true },
-   type: { type: String, required: true }
+   type: { type: String, required: true, enum: ['post', 'repost'] }
 }, { _id: false })
 
 const UserChatSchema = new Schema<IUser['chats'][number]>({
