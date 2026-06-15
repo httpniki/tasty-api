@@ -7,7 +7,7 @@ import PostModel from '../models/post.model'
 import { type IPost } from '../types/types'
 
 export type Post = Pick<IPost, 'uuid' | 'content' | 'create_at' | 'user_uuid' | 'user'>
-export type UserPost = Pick<IPost, 'uuid' | 'content' | 'create_at' | 'user_uuid' | 'user'> & { type: 'post' | 'repost' }
+export type UserPost = Pick<IPost, 'uuid' | 'content' | 'create_at' | 'user_uuid' | 'user'> & { type: 'post' | 'repost', reposted_at?: Date }
 
 interface Paging {
    page: number
@@ -124,6 +124,7 @@ export default class PostService {
 
                   return {
                      type: p.type,
+                     reposted_at: p.reposted_at,
                      ...json
                   }
                })
@@ -229,7 +230,7 @@ export default class PostService {
          throw err
       }
 
-      const updatedPosts = [...user.posts, { uuid: postUuid, type: 'repost' }]
+      const updatedPosts = [...user.posts, { uuid: postUuid, type: 'repost', reposted_at: new Date().toString() }]
 
       await UserModel.findByIdAndUpdate(
          user._id,
@@ -254,7 +255,10 @@ export default class PostService {
          throw err
       }
 
-      const user = await UserModel.findOne().where({ uuid: userUuid })
+      const user = await UserModel
+         .findOne()
+         .where({ uuid: userUuid })
+         .select({ posts: true, uuid: true })
 
       if (!user) {
          const err = new Error('User not found')

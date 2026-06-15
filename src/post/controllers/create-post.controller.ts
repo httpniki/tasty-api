@@ -50,7 +50,7 @@ export default class CreatePostController {
          return this.next(error)
       }
 
-      user.posts.push({ uuid: post.uuid, type: 'post' })
+      user.posts.push({ uuid: post.uuid, type: 'post', created_at: post.create_at })
 
       try {
          await this.userService.updateUser(user._id.toString(), { posts: user.posts })

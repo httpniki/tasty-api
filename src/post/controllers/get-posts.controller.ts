@@ -86,6 +86,7 @@ export default class GetPostsController {
       })
 
       if('type' in post) newPost.setType = post.type
+      if('reposted_at' in post) newPost.setRepostedAt = post.reposted_at.toString()
 
       return newPost
    }

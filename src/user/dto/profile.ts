@@ -11,6 +11,8 @@ interface ProfileType {
    followers: number
    posts: {
       type: 'post' | 'repost'
+      created_at: string
+      reposted_at?: string
       uuid: string
    }[]
    followed: boolean
@@ -18,21 +20,22 @@ interface ProfileType {
    current_user: boolean
 }
 
-export default class Profile implements ProfileType {
-   readonly uuid: ProfileType['uuid']
-   readonly name: ProfileType['name']
-   readonly username: ProfileType['username']
-   readonly description: ProfileType['description']
-   readonly email: ProfileType['email']
-   readonly avatar: ProfileType['avatar']
-   readonly header: ProfileType['header']
-   readonly birthday: ProfileType['birthday']
-   readonly follows: ProfileType['follows']
-   readonly followers: ProfileType['followers']
-   readonly followed: ProfileType['followed']
-   readonly follower: ProfileType['follower']
-   readonly posts: ProfileType['posts']
-   readonly current_user: ProfileType['current_user']
+export default class Profile {
+   private uuid: ProfileType['uuid']
+   private name: ProfileType['name']
+   private username: ProfileType['username']
+   private description: ProfileType['description']
+   private email: ProfileType['email']
+   private avatar: ProfileType['avatar']
+   private header: ProfileType['header']
+   private birthday: ProfileType['birthday']
+   private follows: ProfileType['follows']
+   private followers: ProfileType['followers']
+   private followed: ProfileType['followed']
+   private follower: ProfileType['follower']
+   private posts: ProfileType['posts']
+   private current_user: ProfileType['current_user']
+   private created_at: string
 
    constructor(profile: ProfileType) {
       this.uuid = profile.uuid
@@ -50,4 +53,7 @@ export default class Profile implements ProfileType {
       this.follower = profile.follower
       this.current_user = profile.current_user
    }
+
+   public get getPosts() { return this.posts }
+   public set setPosts(posts: ProfileType['posts']) { this.posts = posts }
 }

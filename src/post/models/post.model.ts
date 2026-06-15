@@ -1,9 +1,11 @@
 import mongoose, { model, Schema } from 'mongoose'
 import mongooseUniqueValidator from 'mongoose-unique-validator'
 
+import UserModel from '@/user/models/user.model'
+
 import { type IPost } from '../types/types'
 
-const posts_schema = new Schema<IPost>({
+const post_schema = new Schema<IPost>({
    content: { type: String, require: true },
    create_at: { type: Date, require: true, default: Date.now },
    uuid: { type: String, require: true, unique: true },
@@ -11,15 +13,24 @@ const posts_schema = new Schema<IPost>({
    user_uuid: { type: String, require: true }
 })
 
-posts_schema.set('toJSON', {
+post_schema.set('toJSON', {
    transform: (document, returnedObject) => {
       delete returnedObject._id
       delete returnedObject.__v
    }
 })
 
-posts_schema.plugin(mongooseUniqueValidator)
+post_schema.post('findOneAndDelete', async function(doc) {
+   if (!doc) return
 
-const PostModel = model('Post', posts_schema)
+   await UserModel.updateMany(
+      { posts: { $elemMatch: { uuid: doc.uuid } } },
+      { $pull: { posts: { uuid: doc.uuid } } }
+   )
+})
+
+post_schema.plugin(mongooseUniqueValidator)
+
+const PostModel = model('Post', post_schema)
 
 export default PostModel

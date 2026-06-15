@@ -69,7 +69,12 @@ export default class GetProfileController {
          birthday: user.birthday,
          follows: user.follows.length,
          followers: user.followers.length,
-         posts: user.posts,
+         posts: user.posts.map((el) => ({
+            type: el.type,
+            created_at: el.created_at?.toString(),
+            reposted_at: el.reposted_at?.toString(),
+            uuid: el.uuid
+         })),
          followed: !!currentUser?.follows.includes(user.uuid),
          follower: !!currentUser?.followers.includes(user.uuid),
          current_user: user.uuid === currentUser?.uuid
