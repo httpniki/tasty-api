@@ -1,5 +1,4 @@
 import { createServer } from 'node:http'
-import path from 'node:path'
 
 import cors from 'cors'
 import express, { json, type NextFunction, type Request, type Response } from 'express'
@@ -8,10 +7,10 @@ import { Server as WebSocketServer } from 'socket.io'
 
 import ChatRouter from '@/chat/chat.router.js'
 import ChatSocket from '@/chat/chat.socket.js'
+import ImageService from '@/images/image.service.js'
 
 import AuthRouter from './src/auth/auth.router.js'
 import ServerConfig from './src/config/config.js'
-import createUserFilesFolder from './src/config/createUserFilesFolder.js'
 import DBConnection from './src/config/db_connection.js'
 import ImageRouter from './src/images/image.router.js'
 import PostRouter from './src/post/post.router.js'
@@ -47,9 +46,7 @@ class ServerBootstrap extends ServerConfig {
       this.app.use(json())
       this.app.use(express.urlencoded({ extended: true }))
 
-      createUserFilesFolder()
-
-      this.app.use(express.static(path.join('..', 'user-files')))
+      this.app.use(express.static(ImageService.folder_pathname))
       this.app.use(morgan('dev'))
 
       this.app.use('/', this.routers())

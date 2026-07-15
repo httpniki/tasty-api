@@ -1,9 +1,21 @@
+import { exists, mkdirSync } from 'node:fs'
+
 import crypto from 'crypto'
-import fs from 'fs/promises'
+import { readdir, readFile, unlink, writeFile } from 'fs/promises'
 import path from 'path'
 
 export default class ImageService {
-   public readonly filesPathname = path.join(process.env.USER_FILES_PATH)
+   public static readonly folder_pathname = path.join(process.env.USER_FILES_PATH)
+
+   constructor() {
+      try {
+         exists(ImageService.folder_pathname, (exists) => {
+            if (!exists) mkdirSync(ImageService.folder_pathname)
+         })
+      } catch (error) {
+         console.error('Error creating images folder', error)
+      }
+   }
 
    public async saveImage(image: File | Express.Multer.File | Blob): Promise<File> {
       let buffer: Buffer | null = null
@@ -29,18 +41,18 @@ export default class ImageService {
          filename = `${crypto.randomBytes(16).toString('hex')}.${ext}`
       }
 
-      await fs.writeFile(path.join(this.filesPathname, filename), buffer)
+      await writeFile(path.join(ImageService.folder_pathname, filename), buffer)
       return new File([buffer as unknown as ArrayBuffer], filename, { type: mimetype })
    }
 
    public async findImage(id: string): Promise<File | null> {
-      const files = await fs.readdir(this.filesPathname)
+      const files = await readdir(ImageService.folder_pathname)
 
       for (const filename of files) {
          const currentId = filename.split('.')[0]
 
          if (currentId === id) {
-            const buffer: Buffer<ArrayBuffer> = await fs.readFile(path.join(this.filesPathname, filename))
+            const buffer: Buffer<ArrayBuffer> = await readFile(path.join(ImageService.folder_pathname, filename))
             const ext = filename.split('.')[1]
             const mimetype = ImageService.getMimeType(ext)
 
@@ -55,8 +67,8 @@ export default class ImageService {
       const image = await this.findImage(id)
       if (!image) return
 
-      const filePath = path.join(this.filesPathname, image.name)
-      await fs.unlink(filePath)
+      const filePath = path.join(ImageService.folder_pathname, image.name)
+      await unlink(filePath)
    }
 
    private static getMimeType(ext: string): string {
