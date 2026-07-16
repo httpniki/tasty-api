@@ -7,10 +7,19 @@ import { type IPost } from '../types/types'
 
 const post_schema = new Schema<IPost>({
    content: { type: String, require: true },
+   // TODO: Rename create_at to created_at
    create_at: { type: Date, require: true, default: Date.now },
    uuid: { type: String, require: true, unique: true },
    user: mongoose.Schema.Types.ObjectId,
-   user_uuid: { type: String, require: true }
+   user_uuid: { type: String, require: true },
+   images: {
+      type: [String],
+      default: [],
+      validate: {
+         validator: (v: string[]) => v.length <= 4,
+         message: 'A post can have at most 4 images'
+      }
+   }
 })
 
 post_schema.set('toJSON', {

@@ -6,8 +6,8 @@ import UserModel from '@/user/models/user.model'
 import PostModel from '../models/post.model'
 import { type IPost } from '../types/types'
 
-export type Post = Pick<IPost, 'uuid' | 'content' | 'create_at' | 'user_uuid' | 'user'>
-export type UserPost = Pick<IPost, 'uuid' | 'content' | 'create_at' | 'user_uuid' | 'user'> & { type: 'post' | 'repost', reposted_at?: Date }
+export type Post = Pick<IPost, 'uuid' | 'content' | 'create_at' | 'user_uuid' | 'user' | 'images'>
+export type UserPost = Pick<IPost, 'uuid' | 'content' | 'create_at' | 'user_uuid' | 'user' | 'images'> & { type: 'post' | 'repost', reposted_at?: Date }
 
 interface Paging {
    page: number
@@ -38,8 +38,9 @@ interface PostsWithPaging<T = Post | UserPost> {
 
 interface NewPostArguments {
    user: Post['user'] | string
-   user_uuid: Post['user_uuid'],
+   user_uuid: Post['user_uuid']
    content: Post['content']
+   images?: string[]
 }
 
 export default class PostService {
@@ -49,6 +50,7 @@ export default class PostService {
       uuid: true,
       user: true,
       user_uuid: true,
+      images: true,
    }
 
    /***
@@ -171,7 +173,8 @@ export default class PostService {
          content: data.content,
          user: data.user,
          uuid: crypto.randomBytes(16).toString('hex'),
-         create_at: Date.now()
+         create_at: Date.now(),
+         images: data.images ?? []
       })
 
       const inputError = postModel.validateSync()

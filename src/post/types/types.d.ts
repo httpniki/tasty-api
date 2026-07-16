@@ -7,4 +7,5 @@ export interface IPost {
    uuid: string
    user: mongoose.Types.ObjectId
    user_uuid: string
+   images: string[]
 }

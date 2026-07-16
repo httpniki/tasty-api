@@ -27,7 +27,7 @@ export interface IUser {
 
 const UserPostSchema = new Schema({
    uuid: { type: String, required: true },
-   posted_at: { type: Date, required: true },
+   created_at: { type: Date, required: true },
    reposted_at: { type: Date, required: false, default: null },
    type: { type: String, required: true, enum: ['post', 'repost'] }
 }, { _id: false })

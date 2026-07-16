@@ -71,6 +71,7 @@ export default class GetPostsController {
          uuid: post.uuid,
          content: post.content,
          create_at: post.create_at.toString(),
+         images: post.images,
          user: new User({
             uuid: user.uuid,
             email: user.email,

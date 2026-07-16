@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express'
 
+import ImageService from '@/images/image.service'
 import UserService, { type User } from '@/user/services/user.service'
 
 import PostDTO from '../dto/post'
@@ -16,6 +17,7 @@ export default class CreatePostController {
    private readonly next: NextFunction
    private readonly postService = new PostService()
    private readonly userService = new UserService()
+   private readonly imageService = new ImageService()
 
    constructor(req: Request<any, any, RequestBody>, res: Response, next: NextFunction) {
       this.req = req
@@ -29,6 +31,17 @@ export default class CreatePostController {
 
       if (!this.req.session) return this.next(new Error('Session not found'))
       const { user_id, user_uuid } = this.req.session
+      const files = this.req.files
+
+      const imageUuids: string[] = []
+
+      if (files && 'images' in files) {
+         for (const file of files.images) {
+            const saved = await this.imageService.saveImage(file)
+            const uuid = saved.name.split('.')[0]
+            imageUuids.push(uuid)
+         }
+      }
 
       let post: Post
       let user: User
@@ -45,6 +58,7 @@ export default class CreatePostController {
             user_uuid,
             content,
             user: user_id,
+            images: imageUuids,
          })
       } catch (error) {
          return this.next(error)
@@ -63,6 +77,7 @@ export default class CreatePostController {
          content: post.content,
          create_at: post.create_at.toString(),
          type: 'post',
+         images: post.images,
          user: new UserDTO({
             uuid: user.uuid,
             email: user.email,

@@ -30,7 +30,7 @@ export default class GetImageController {
             return this.res.status(exception.status).json(exception.toJSON())
          }
 
-         pathname = path.join(this.imageService.filesPathname, image.name)
+         pathname = path.join(ImageService.folder_pathname, image.name)
       } catch (error) {
          return this.next(error)
       }

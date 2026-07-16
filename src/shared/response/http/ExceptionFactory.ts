@@ -78,6 +78,12 @@ export class ExceptionFactory {
    static readonly invalidMimetype = (message: string = 'Invalid file type'): ApiException =>
       new ApiException({ status: 400, message, error_name: 'invalid_mimetype' })
 
+   static readonly unexpectedField = (field: string): ApiException =>
+      new ApiException({ status: 400, message: `Unexpected field: ${field}`, error_name: 'unexpected_field' })
+
+   static readonly maxFileCountExceeded = (max: number): ApiException =>
+      new ApiException({ status: 400, message: `Too many files. Maximum allowed is ${max}`, error_name: 'max_file_count_exceeded' })
+
    // UUID
    static readonly invalidUUID =
       new ApiException({ status: 400, message: 'Invalid uuid', error_name: 'bad_uuid' })

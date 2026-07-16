@@ -7,6 +7,7 @@ interface PostType {
    user: User,
    type?: 'post' | 'repost'
    reposted_at?: string
+   images: string[]
 }
 
 export default class Post {
@@ -16,6 +17,7 @@ export default class Post {
    private type: 'post' | 'repost' = 'post'
    private user: User
    private reposted_at?: string
+   private images: string[]
 
    constructor(post: PostType) {
       this.uuid = post.uuid
@@ -24,6 +26,7 @@ export default class Post {
       this.user = post.user
       this.type = post.type
       this.reposted_at = post.reposted_at
+      this.images = post.images
    }
 
    public set setType(type: 'post' | 'repost') { this.type = type }
@@ -37,4 +40,5 @@ export default class Post {
    public set setRepostedAt(reposted_at: string) { this.reposted_at = reposted_at }
    public get getUser() { return this.user }
    public get getUUID() { return this.uuid }
+   public get getImages() { return this.images }
 }
