@@ -12,11 +12,11 @@ export interface IUser {
    email: string
    encrypted_password: string
    password?: string
-   posts: { 
-      uuid: string, 
-      type: 'post' | 'repost' 
-      created_at: Date, 
-      reposted_at?: Date 
+   posts: {
+      uuid: string,
+      type: 'post' | 'repost'
+      created_at: Date,
+      reposted_at?: Date
    }[]
    chats: { uuid: string, users: [string, string] }[]
    follows: string[]

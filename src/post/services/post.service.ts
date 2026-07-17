@@ -6,8 +6,8 @@ import UserModel from '@/user/models/user.model'
 import PostModel from '../models/post.model'
 import { type IPost } from '../types/types'
 
-export type Post = Pick<IPost, 'uuid' | 'content' | 'create_at' | 'user_uuid' | 'user' | 'images'>
-export type UserPost = Pick<IPost, 'uuid' | 'content' | 'create_at' | 'user_uuid' | 'user' | 'images'> & { type: 'post' | 'repost', reposted_at?: Date }
+export type Post = Pick<IPost, 'uuid' | 'content' | 'created_at' | 'user_uuid' | 'user' | 'images'>
+export type UserPost = Pick<IPost, 'uuid' | 'content' | 'created_at' | 'user_uuid' | 'user' | 'images'> & { type: 'post' | 'repost', reposted_at?: Date }
 
 interface Paging {
    page: number
@@ -46,7 +46,7 @@ interface NewPostArguments {
 export default class PostService {
    private post_projection = {
       content: true,
-      create_at: true,
+      created_at: true,
       uuid: true,
       user: true,
       user_uuid: true,
@@ -67,7 +67,7 @@ export default class PostService {
             .select(this.post_projection)
             .skip((page - 1) * limit)
             .limit(limit)
-            .sort({ create_at: -1 }),
+            .sort({ created_at: -1 }),
          await PostModel.countDocuments()
       ])
 
@@ -173,7 +173,7 @@ export default class PostService {
          content: data.content,
          user: data.user,
          uuid: crypto.randomBytes(16).toString('hex'),
-         create_at: Date.now(),
+         created_at: Date.now(),
          images: data.images ?? []
       })
 

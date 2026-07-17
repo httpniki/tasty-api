@@ -70,7 +70,7 @@ export default class GetPostsController {
       const newPost = new Post({
          uuid: post.uuid,
          content: post.content,
-         create_at: post.create_at.toString(),
+         created_at: post.created_at.toString(),
          images: post.images,
          user: new User({
             uuid: user.uuid,

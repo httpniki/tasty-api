@@ -64,7 +64,7 @@ export default class CreatePostController {
          return this.next(error)
       }
 
-      user.posts.push({ uuid: post.uuid, type: 'post', created_at: post.create_at })
+      user.posts.push({ uuid: post.uuid, type: 'post', created_at: post.created_at })
 
       try {
          await this.userService.updateUser(user._id.toString(), { posts: user.posts })
@@ -75,7 +75,7 @@ export default class CreatePostController {
       const postDTO = new PostDTO({
          uuid: post.uuid,
          content: post.content,
-         create_at: post.create_at.toString(),
+         created_at: post.created_at.toString(),
          type: 'post',
          images: post.images,
          user: new UserDTO({

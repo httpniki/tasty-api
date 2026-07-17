@@ -7,8 +7,7 @@ import { type IPost } from '../types/types'
 
 const post_schema = new Schema<IPost>({
    content: { type: String, require: true },
-   // TODO: Rename create_at to created_at
-   create_at: { type: Date, require: true, default: Date.now },
+   created_at: { type: Date, require: true, default: Date.now },
    uuid: { type: String, require: true, unique: true },
    user: mongoose.Schema.Types.ObjectId,
    user_uuid: { type: String, require: true },
