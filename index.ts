@@ -8,6 +8,8 @@ import { Server as WebSocketServer } from 'socket.io'
 import ChatRouter from '@/chat/chat.router.js'
 import ChatSocket from '@/chat/chat.socket.js'
 import ImageService from '@/images/image.service.js'
+import NotificationRouter from '@/notification/notification.router.js'
+import NotificationSocket from '@/notification/notification.socket.js'
 
 import AuthRouter from './src/auth/auth.router.js'
 import ServerConfig from './src/config/config.js'
@@ -77,12 +79,14 @@ class ServerBootstrap extends ServerConfig {
          new PostRouter().router,
          new AuthRouter().router,
          new ImageRouter().router,
-         new ChatRouter().router
+         new ChatRouter().router,
+         new NotificationRouter().router
       ]
    }
 
    private initSocket(): void {
       new ChatSocket(this.io)
+      new NotificationSocket(this.io)
    }
 
    private initDB(): void {

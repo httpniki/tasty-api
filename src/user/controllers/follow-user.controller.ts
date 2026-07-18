@@ -1,5 +1,8 @@
 import type { NextFunction, Request, Response } from 'express'
 
+import NotificationDTO from '@/notification/dto/Notification'
+import NotificationSocket from '@/notification/notification.socket'
+import NotificationService from '@/notification/services/notification.service'
 import { ServiceErrorName } from '@/shared/errors/ServiceError'
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 
@@ -27,6 +30,7 @@ export default class FollowUserController {
    async execute() {
       const { username } = this.req.params
       let targetId: string | null = null
+      let targetUser: Awaited<ReturnType<typeof this.userService.findUser>> = null
 
       const result = this.validateUsername(username)
       if (!result.isValid && result.error) return this.next(result.error)
@@ -37,7 +41,7 @@ export default class FollowUserController {
       }
 
       try {
-         const targetUser = await this.userService.findUser({ username: { $regex: new RegExp(`${username}`, 'i') } })
+         targetUser = await this.userService.findUser({ username: { $regex: new RegExp(`${username}`, 'i') } })
 
          if (!targetUser) {
             const exception = ExceptionFactory.notFound('User not found')
@@ -50,12 +54,23 @@ export default class FollowUserController {
       }
 
       if (!this.req.session) return this.next(new Error('Session not found'))
+
       const currentId = this.req.session.user_id
 
       if (currentId === targetId) {
          const exception = ExceptionFactory.invalidParam('You cannot follow yourself')
          return this.res.status(exception.status).json(exception.toJSON())
       }
+
+      let currentUser: Awaited<ReturnType<typeof this.userService.findUser>> = null
+
+      try {
+         currentUser = await this.userService.findUser({ _id: currentId })
+      } catch (error) {
+         return this.next(error)
+      }
+
+      if (!currentUser) return this.next(new Error('Session user not found'))
 
       try {
          await this.userService.syncUserRelationship(currentId, targetId, 'FOLLOW')
@@ -66,6 +81,23 @@ export default class FollowUserController {
          }
 
          return this.next(error)
+      }
+
+      try {
+         const notificationService = new NotificationService()
+
+         const notification = await notificationService.createNotification({
+            user_uuid: targetUser.uuid,
+            type: 'follow',
+            reference_uuid: currentUser.uuid,
+            message: `${currentUser.username} started following you`
+         })
+
+         const dto = new NotificationDTO(notification)
+
+         NotificationSocket.emitToUser(targetUser.uuid, 'receive', dto)
+      } catch (error) {
+         console.error('Failed to create follow notification:', error)
       }
 
       return this.res.status(200).json()
