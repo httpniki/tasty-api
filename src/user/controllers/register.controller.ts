@@ -1,10 +1,10 @@
 import type { NextFunction, Request, Response } from 'express'
 
-import ServiceError, { ServiceErrorName } from '@/shared/errors/ServiceError'
+import ImageService from '@/images/image.service'
+import { ServiceErrorName } from '@/shared/errors/ServiceError'
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 
-import AuthService from '../../auth/services/auth.service'
-import ImageService from '../../images/image.service'
+import ProfileService from '../services/profile.service'
 import UserService from '../services/user.service'
 
 interface QueryRequest extends Request {
@@ -22,15 +22,13 @@ interface QueryRequest extends Request {
    }
 }
 
-type UserSchema = Parameters<UserService['createUser']>[0]
-
 export default class RegisterController {
    private req: QueryRequest
    private res: Response
    private next: NextFunction
-   private imageService = new ImageService()
-   private authService = new AuthService()
    private userService = new UserService()
+   private imageService = new ImageService()
+   private profileService = new ProfileService()
 
    constructor(req: Request, res: Response, next: NextFunction) {
       this.req = req as QueryRequest
@@ -41,27 +39,31 @@ export default class RegisterController {
    }
 
    async execute() {
-      if (!this.req.headers['content-type'].includes('multipart/form-data')) {
-         const exception = ExceptionFactory.contentTypeNotSupport('expected multipart/form-data')
-         return this.next(exception)
-      }
-
       const body = this.req.body
-      const files = this.req.files as { [fieldname: string]: Express.Multer.File[] }
+      const files = this.req.files
+      let user: Awaited<ReturnType<typeof this.userService.createUser>>
 
-      const encryptedPassword: string | null = await this.authService
-         .hashPassword(body.password)
-         .then((hash) => hash)
-         .catch<null>(() => null)
-
-      const schema: UserSchema = {
+      const user_schema: Parameters<UserService['createUser']>[0] = {
          username: body.username,
          email: body.email,
-         description: body.description,
-         name: body.name,
          password: body.password,
-         encrypted_password: encryptedPassword,
-         birthday: body.birthday,
+      }
+
+      try {
+         user = await this.userService.createUser(user_schema)
+      } catch (error: any) {
+         if (error.name === ServiceErrorName.InvalidInput) {
+            const exception = ExceptionFactory.invalidInput(error.message, error.data)
+            return this.res.status(exception.status).json(exception.toJSON())
+         }
+
+         return this.next(error)
+      }
+
+      const profile_schema: Parameters<ProfileService['createProfile']>[0] = {
+         name: body.name,
+         birthday: new Date(body.birthday),
+         user_uuid: user.uuid
       }
 
       try {
@@ -69,41 +71,42 @@ export default class RegisterController {
             const avatar = files.avatar[0]
 
             const image = await this.imageService.saveImage(avatar)
-            schema.avatar = image.name.split('.')[0]
+            profile_schema.avatar = image.name.split('.')[0]
          }
 
          if (files?.header && files.header.length > 0) {
             const header = files.header[0]
 
             const image = await this.imageService.saveImage(header)
-            schema.header = image.name.split('.')[0]
+            profile_schema.header = image.name.split('.')[0]
          }
       } catch (error) {
-         this.revokeChanges(schema)
-         this.next(error)
+         this.revokeChanges(profile_schema)
+         return this.next(error)
       }
 
       try {
-         await this.userService.createUser(schema)
-      } catch (error) {
-         this.revokeChanges(schema)
-         if (!(error instanceof ServiceError)) return this.next(error)
+         await this.profileService.createProfile(profile_schema)
+      } catch (error: any) {
+         this.revokeChanges(profile_schema)
 
          if (error.name === ServiceErrorName.InvalidInput) {
-            const exception = ExceptionFactory.invalidInput(error.message)
+            const exception = ExceptionFactory.invalidInput(error.message, error.data)
             return this.res.status(exception.status).json(exception.toJSON())
          }
+
+         return this.next(error)
       }
 
       return this.res.status(201).json()
    }
 
-   private async revokeChanges(schema: UserSchema) {
+   private async revokeChanges(schema: Parameters<ProfileService['createProfile']>[0]) {
       try {
          if (schema.avatar) await this.imageService.deleteImage(schema.avatar)
          if (schema.header) await this.imageService.deleteImage(schema.header)
-      } catch (err) {
-         return this.next(err)
+      } catch (error) {
+         return this.next(error)
       }
    }
 }

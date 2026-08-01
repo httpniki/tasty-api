@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 
+import NotificationServiceException from '../errors/NotificationServiceException'
 import NotificationService from '../services/notification.service'
 
 interface Params {
@@ -32,14 +33,16 @@ export default class ReadNotificationController {
       try {
          await this.notificationService.markAsRead(notification_uuid, user_uuid)
          return this.res.status(200).json()
-      } catch (error) {
+      } catch (error: unknown) {
+         if (!(error instanceof NotificationServiceException)) return this.next(error)
+
          if (error.name === 'notification_not_found') {
-            const exception = ExceptionFactory.notFound('Notification not found')
+            const exception = ExceptionFactory.notFound(error.message)
             return this.res.status(exception.status).json(exception.toJSON())
          }
 
          if (error.name === 'not_authorized') {
-            const exception = ExceptionFactory.forbidden
+            const exception = ExceptionFactory.invalidInput(error.message)
             return this.res.status(exception.status).json(exception.toJSON())
          }
 

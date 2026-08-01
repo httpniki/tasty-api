@@ -1,61 +1,61 @@
 import bcrypt from 'bcrypt'
 
-import ServiceError, { ServiceErrorName } from '@/shared/errors/ServiceError'
-
 import UserModel, { type IUser } from '../../user/models/user.model'
+import { AuthServiceExceptionFactory } from '../errors/AuthServiceException'
 
 type UserCredentials =
    | { accessMethod: 'email', email: string, password: string }
    | { accessMethod: 'username', username: string, password: string }
 
-type User = Pick<IUser, '_id' | 'uuid' | 'username' | 'email' | 'encrypted_password'>
-type UserProjection = { [key in keyof User]: boolean }
-
-type AuthResult =
-   | { success: true, user: User }
-   | { success: false, reason: 'not_found' | 'invalid_credentials' }
+type User = Pick<IUser, 'uuid' | 'username' | 'email' | 'encrypted_password' | 'created_at' | 'status'>
 
 export default class AuthService {
-   private user_projection: UserProjection = {
-      _id: true,
+   private user_projection: { [key in keyof User]: boolean } = {
       uuid: true,
       username: true,
       email: true,
-      encrypted_password: true
+      encrypted_password: true,
+      created_at: true,
+      status: true
    }
 
    public async hashPassword(password: string): Promise<string> {
       return await bcrypt.hash(password, 10)
    }
 
-   /***
-   * @throws ServiceError.DatabaseError
-   **/
-   public async authenticate(credentials: UserCredentials): Promise<AuthResult> {
+   public async authenticate(credentials: UserCredentials): Promise<User> {
       let user: User | null = null
 
-      try {
-         if (credentials.accessMethod === 'email') {
-            user = await UserModel
-               .findOne({ email: credentials.email })
-               .select(this.user_projection)
-         }
+      if (credentials.accessMethod === 'email') {
+         const result = await UserModel
+            .findOne({ email: credentials.email })
+            .select(this.user_projection)
 
-         if (credentials.accessMethod === 'username') {
-            user = await UserModel
-               .findOne({ username: credentials.username })
-               .select(this.user_projection)
-         }
-      } catch (error) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
+         if (!result) throw AuthServiceExceptionFactory.notFound('Invalid credentials', { email: credentials.email })
+
+         user = result.toJSON()
       }
 
-      if (!user) return { success: false, reason: 'not_found' }
+      if (credentials.accessMethod === 'username') {
+         const result = await UserModel
+            .findOne({ username: credentials.username })
+            .select(this.user_projection)
+
+         if (!result) throw AuthServiceExceptionFactory.notFound('User not found', { username: credentials.username })
+
+         user = result.toJSON()
+      }
 
       const isPasswordValid = await bcrypt.compare(credentials.password, user.encrypted_password.toString())
+      if (!isPasswordValid) throw AuthServiceExceptionFactory.invalidCredentials('Invalid credentials', credentials)
 
-      if (!isPasswordValid) return { success: false, reason: 'invalid_credentials' }
-
-      return { success: true, user: user }
+      return {
+         encrypted_password: user.encrypted_password,
+         uuid: user.uuid,
+         username: user.username,
+         email: user.email,
+         created_at: user.created_at,
+         status: user.status
+      }
    }
 }

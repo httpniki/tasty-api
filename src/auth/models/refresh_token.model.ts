@@ -1,8 +1,8 @@
-import { model, Schema, type Types } from 'mongoose'
+import { model, Schema } from 'mongoose'
 import mongooseUniqueValidator from 'mongoose-unique-validator'
 
 export interface IRefreshToken {
-   user: Types.ObjectId
+   user_uuid: string
    token: string
    parent: string | null
    createdAt: Date
@@ -11,7 +11,7 @@ export interface IRefreshToken {
 }
 
 const RefreshTokenSchema = new Schema<IRefreshToken>({
-   user: { type: Schema.Types.ObjectId, required: true, ref: 'User' },
+   user_uuid: { type: String, required: true, unique: true },
    token: { type: String, required: true, unique: true },
    parent: { type: String, default: null },
    createdAt: { type: Date, required: true },

@@ -69,8 +69,8 @@ export class ExceptionFactory {
    static readonly bodyNotFound =
       new ApiException({ status: 400, message: 'The body cannot be empty', error_name: 'body_not_found' })
 
-   static readonly invalidInput = (message: string): ApiException =>
-      new ApiException({ status: 400, message, error_name: 'invalid_input' })
+   static readonly invalidInput = <T = any>(message: string, data?: T): ApiException =>
+      new ApiException({ status: 400, message, error_name: 'invalid_input', data })
 
    static readonly maxUploadSizeExceeded =
       new ApiException({ status: 400, message: 'The file size exceeds the maximum allowed size', error_name: 'file_size_exceeded' })
@@ -87,4 +87,8 @@ export class ExceptionFactory {
    // UUID
    static readonly invalidUUID =
       new ApiException({ status: 400, message: 'Invalid uuid', error_name: 'bad_uuid' })
+
+   // User 
+   static readonly OnboardingRequired = (message: string = 'User onboarding process must be completed to process this request'): ApiException =>
+      new ApiException({ status: 400, message, error_name: 'onboarding_required' })
 }

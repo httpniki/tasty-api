@@ -1,108 +1,85 @@
+import { Error as MongooseError } from 'mongoose'
 import { v4 as uuid } from 'uuid'
 
-import ServiceError, { ServiceErrorName } from '@/shared/errors/ServiceError'
-
+import { UserServiceExceptionFactory } from '../errors/UserServiceException'
 import UserModel, { type IUser } from '../models/user.model'
 
-interface NewUserData extends Pick<IUser, 'username' | 'email' | 'name' | 'encrypted_password' | 'birthday' | 'password'> {
-   avatar?: IUser['avatar']
-   header?: IUser['header']
-   description?: IUser['description']
-}
-
-export type User = Omit<IUser, 'password'>
+type User = Omit<IUser, 'password' | '_id'>
 
 interface FindUserArguments {
    email?: string
    username?: string | { $regex: RegExp }
    uuid?: string
-   _id?: string
 }
 
-type FindUserProjection = { [key in keyof User]: boolean }
+interface Paging {
+   page: number
+   limit: number
+   max_page: number
+   total_results: number
+}
 
 interface UsersWithPaging {
    users: User[]
-   paging: {
-      page: number
-      limit: number
-      max_page: number
-      total_results: number
-   }
+   paging: Paging
 }
 
+type NewUserSchema = Pick<IUser, 'username' | 'email' | 'password'>
+
 export default class UserService {
-   private projection: FindUserProjection = {
-      _id: true,
+   private user_projection = {
       uuid: true,
       username: true,
-      avatar: true,
-      header: true,
-      name: true,
       email: true,
-      posts: true,
-      chats: true,
-      follows: true,
-      followers: true,
       created_at: true,
-      birthday: true,
-      description: true,
-      encrypted_password: true
+      encrypted_password: true,
+      status: true
    }
 
-   /**
-      @throws ServiceError.DatabaseError
-   **/
-   async findUser(args: FindUserArguments): Promise<User | null> {
-      try {
-         const user = await UserModel
-            .findOne()
-            .where(args)
-            .select(this.projection)
+   async findUser(args: FindUserArguments): Promise<User> {
+      const result = await UserModel
+         .findOne()
+         .where(args)
+         .select(this.user_projection)
 
-         if (user) return user.toObject()
+      if (!result) throw UserServiceExceptionFactory.userNotFound(args as any)
 
-         return null
-      } catch (error) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
+      const user = result.toObject()
+
+      return {
+         uuid: user.uuid,
+         username: user.username,
+         email: user.email,
+         created_at: user.created_at,
+         encrypted_password: user.encrypted_password,
+         status: user.status
       }
    }
 
-   async findUsers(query: string, page = 1, limit = 20): Promise<UsersWithPaging> {
-      let users: User[] = []
-      let totalResults = 0
+   async findUsers(username: RegExp, page = 1, limit = 20): Promise<UsersWithPaging> {
+      const [results, totalResults] = await Promise.all([
+         UserModel
+            .find({ username: { $regex: username } })
+            .select(this.user_projection)
+            .skip((page - 1) * limit)
+            .limit(limit),
+         UserModel.countDocuments({
+            username: { $regex: username }
+         })
+      ])
 
-      try {
-         const [results, total] = await Promise.all([
-            UserModel
-               .find({
-                  $or: [
-                     { name: { $regex: new RegExp(query, 'i') } },
-                     { username: { $regex: new RegExp(query, 'i') } }
-                  ]
-               })
-               .select({
-                  _id: true,
-                  uuid: true,
-                  username: true,
-                  avatar: true,
-                  name: true
-               })
-               .skip((page - 1) * limit)
-               .limit(limit),
-            UserModel.countDocuments({
-               $or: [
-                  { name: { $regex: new RegExp(query, 'i') } },
-                  { username: { $regex: new RegExp(query, 'i') } }
-               ]
-            })
-         ])
+      const users: User[] = results.map((u) => {
+         const user = u.toObject()
 
-         users = results.map((user) => user.toObject())
-         totalResults = total
-      } catch (error) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
-      }
+         return {
+            uuid: user.uuid,
+            username: user.username,
+            email: user.email,
+            created_at: user.created_at,
+            encrypted_password: user.encrypted_password,
+            status: user.status
+         }
+      })
 
       return {
          users,
@@ -115,95 +92,64 @@ export default class UserService {
       }
    }
 
-   /**
-      @throws ServiceError.InvalidInput
-      @throws ServiceError.DatabaseError
-   **/
-   async createUser(user: NewUserData) {
+   async createUser(user: NewUserSchema): Promise<User> {
+      const user_uuid = uuid()
+
       const userModel = new UserModel({
-         ...user,
-         uuid: uuid(),
-         posts: [],
-         follows: [],
-         followers: [],
-         description: user.description ?? '',
-         avatar: user.avatar ?? '',
-         header: user.header ?? '',
-         created_at: new Date()
+         uuid: user_uuid,
+         email: user.email,
+         password: user.password,
+         username: user.username
       })
 
-      const error = userModel.validateSync()
+      const err = await userModel.validate()
+         .catch((err: MongooseError.ValidationError) => {
+            const validationErr = Object.values(err.errors).find(error => error instanceof MongooseError.ValidatorError)
+            if (validationErr) return validationErr
 
-      if (error) throw new ServiceError(ServiceErrorName.InvalidInput, error.message, error)
+            const castError = Object.values(err.errors).find(error => error instanceof MongooseError.CastError)
+            return castError
+         })
 
-      try {
-         await UserModel.create(userModel)
-      } catch (error) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
-      }
+      if (err instanceof MongooseError.ValidatorError) throw UserServiceExceptionFactory.validationError(err.message, { [err.path]: err.message })
+      if (err instanceof MongooseError.CastError) throw err
+
+      const isNotAvailableEmail = await UserModel.findOne({ email: user.email })
+      if (isNotAvailableEmail) throw UserServiceExceptionFactory.validationError('Email already used', { email: user.email })
+
+      const isNotAvailableUsername = await UserModel.findOne({ username: user.username })
+      if (isNotAvailableUsername) throw UserServiceExceptionFactory.validationError('Username already used', { username: user.username })
+      return await userModel
+         .save()
+         .then((u) => {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { _id, password, ...user } = u.toObject()
+            return user
+         })
+         .catch((err) => {
+            throw err
+         })
    }
 
-   /***
-      @throws ServiceError.InvalidInput
-      @throws ServiceError.DatabaseError
-   **/
-   async updateUser(id: string, data: Partial<Omit<User, 'uuid' | 'password' | 'encrypted_password' | '_id'>>) {
-      try {
-         await UserModel.findByIdAndUpdate({ _id: id }, { $set: data }, { runValidators: true })
-      } catch (error) {
-         if (error.name === 'ValidationError') {
-            const errorMessage = error.message
-               .replace('Validation failed: ', '')
-               .replace(/^[^:]+:/, '')
+   async updateUser(user_uuid: string, data: Partial<Omit<User, 'uuid' | 'password' | 'encrypted_password' | '_id'>>): Promise<User> {
+      const user = UserModel.findOne({ uuid: user_uuid })
 
-            throw new ServiceError(ServiceErrorName.InvalidInput, errorMessage, error)
-         }
+      if (!user) throw UserServiceExceptionFactory.userNotFound({ uuid: user_uuid })
 
-         throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
-      }
-   }
+      return await UserModel.findOneAndUpdate({ runValidators: true })
+         .where({ uuid: user_uuid })
+         .set(data)
+         .then((u) => {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { _id, password, ...user } = u
+            return user
+         })
+         .catch((err) => {
+            if (err instanceof MongooseError.ValidatorError) {
+               throw UserServiceExceptionFactory.validationError(err.message, { [err.path]: err.message })
+            }
 
-   /**
-      @throws ServiceError.DatabaseError
-      @throws ServiceError.NotFound
-   **/
-   async syncUserRelationship(user_id: string, target_id: string, relationship: 'FOLLOW' | 'UNFOLLOW') {
-      let user: User | null = null
-      let target: User | null = null
-
-      try {
-         user = await this.findUser({ _id: user_id })
-         target = await this.findUser({ _id: target_id })
-      } catch (error) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
-      }
-
-      if (!user) throw new ServiceError(ServiceErrorName.NotFound, 'User not found', null, { user_id })
-      if (!target) throw new ServiceError(ServiceErrorName.Unexpected, 'Target user not found', null, { target_id })
-
-      if (relationship === 'UNFOLLOW' && !user.follows.includes(target.uuid)) {
-         throw new ServiceError(ServiceErrorName.InvalidInput, 'User already unfollowed')
-      }
-
-      if (relationship === 'UNFOLLOW' && user.follows.includes(target.uuid)) {
-         user.follows = user.follows.filter((el) => el !== target.uuid)
-         target.followers = target.followers.filter((el) => el !== user.uuid)
-      }
-
-      if (relationship === 'FOLLOW' && user.follows.includes(target.uuid)) {
-         throw new ServiceError(ServiceErrorName.InvalidInput, 'User already followed')
-      }
-
-      if (relationship === 'FOLLOW' && !user.follows.includes(target.uuid)) {
-         user.follows.push(target.uuid)
-         target.followers.push(user.uuid)
-      }
-
-      try {
-         await this.updateUser(user._id.toString(), { follows: user.follows })
-         await this.updateUser(target._id.toString(), { followers: target.followers })
-      } catch (error) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
-      }
+            throw err
+         })
    }
 }

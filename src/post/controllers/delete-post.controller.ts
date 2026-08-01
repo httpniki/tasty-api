@@ -1,23 +1,24 @@
 import type { NextFunction, Request, Response } from 'express'
 
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
-import UserService, { type User } from '@/user/services/user.service'
+import ProfileService from '@/user/services/profile.service'
 
-import PostService, { type Post } from '../services/post.service'
+import PostServiceException from '../errors/PostServiceException'
+import PostService from '../services/post.service'
 
 interface Params {
    post_uuid: string
 }
 
 export default class DeletePostController {
-   private readonly req: Request<Params, any, any, any>
+   private readonly req: Request<Params>
    private readonly res: Response
    private readonly next: NextFunction
    private readonly postService = new PostService()
-   private readonly userService = new UserService()
+   private readonly profileService = new ProfileService()
 
    constructor(req: Request, res: Response, next: NextFunction) {
-      this.req = req as unknown as Request<Params, any, any, any>
+      this.req = req as unknown as Request<Params>
       this.res = res
       this.next = next
       this.execute()
@@ -25,39 +26,41 @@ export default class DeletePostController {
 
    async execute() {
       const { post_uuid } = this.req.params
-      let user: User | null = null
-      let post: Post | null = null
 
       if (!post_uuid) {
-         const exception = ExceptionFactory.paramNotFound('post_uuid not found')
-         return this.res.status(exception.status).json(exception.message)
+         const exception = ExceptionFactory.paramNotFound('post_uuid')
+         return this.res.status(exception.status).json(exception.toJSON())
       }
 
-      if(!this.req.session) return this.next(new Error('Session not found'))
+      if (!this.req.session) return this.next(new Error('Session not found'))
+
+      const { user_uuid } = this.req.session
+      let post: Awaited<ReturnType<PostService['findPost']>>
 
       try {
          post = await this.postService.findPost({ uuid: post_uuid })
-         user = await this.userService.findUser({ uuid: this.req.session.user_uuid })
-
-         if (!post) {
-            const exception = ExceptionFactory.notFound('post not found')
-            return this.res.status(exception.status).json(exception.message)
+      } catch (error: unknown) {
+         if (error instanceof PostServiceException && error.name === 'post_not_found') {
+            const exception = ExceptionFactory.notFound(error.message)
+            return this.res.status(exception.status).json(exception.toJSON())
          }
 
-         if (!user) throw new Error('User not found while deleting a post')
-      } catch (error) {
          return this.next(error)
       }
 
-      if (user.uuid !== post.user_uuid) {
+      if (user_uuid !== post.user_uuid) {
          const exception = ExceptionFactory.unauthorized('You are not the owner of this post')
-         return this.res.status(exception.status).json(exception.message)
+         return this.res.status(exception.status).json(exception.toJSON())
       }
 
       try {
          await this.postService.deletePost(post_uuid)
-         await this.userService.updateUser(user._id.toString(), { posts: user.posts.filter(el => el.uuid !== post_uuid) })
-      } catch (error) {
+         const profile = await this.profileService.findProfile({ user_uuid: post.user_uuid })
+
+         await this.profileService.updateProfile(post.user_uuid, {
+            posts: profile.posts.filter((p) => p.uuid !== post_uuid)
+         })
+      } catch (error: unknown) {
          return this.next(error)
       }
 

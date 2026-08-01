@@ -1,18 +1,20 @@
 import type { NextFunction, Request, Response } from 'express'
 import { type ParamsDictionary } from 'express-serve-static-core'
 
+import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 import PaginatedResponse, { Paging } from '@/shared/response/http/PaginatedResponse'
+import ProfileService from '@/user/services/profile.service'
 import UserService from '@/user/services/user.service'
 
 import Post from '../dto/post'
 import User from '../dto/user'
-import PostService, { type Post as PostType, type UserPost as UserPostType } from '../services/post.service'
+import PostServiceException from '../errors/PostServiceException'
+import PostService from '../services/post.service'
 
 interface QueryParams {
    user?: string
-   follows?: boolean
-   page?: number
-   limit?: number
+   page?: string
+   limit?: string
 }
 
 export default class GetPostsController {
@@ -21,6 +23,7 @@ export default class GetPostsController {
    private readonly next: NextFunction
    private readonly postService = new PostService()
    private readonly userService = new UserService()
+   private readonly profileService = new ProfileService()
 
    constructor(req: Request, res: Response, next: NextFunction) {
       this.req = req
@@ -30,30 +33,39 @@ export default class GetPostsController {
    }
 
    private async execute() {
-      const { user: user_uuid, page = 1, limit = 20 } = this.req.query
+      const user_uuid = this.req.query.user
+      const page = parseInt(this.req.query.page ?? '1')
+      const limit = parseInt(this.req.query.limit ?? '20')
       let posts: Post[] = []
       let totalResults = 0
       let maxPage = 1
 
+      if (isNaN(page) || isNaN(limit)) {
+         const exception = ExceptionFactory.invalidParam('page and limit must be numbers')
+         return this.res.status(exception.status).json(exception.toJSON())
+      }
+
+      if (page < 1 || limit < 1) {
+         const exception = ExceptionFactory.invalidParam('page and limit must be greater than 0')
+         return this.res.status(exception.status).json(exception.toJSON())
+      }
+
       try {
-         if (!user_uuid) {
-            const results = await this.postService.findPosts({ page, limit })
-            totalResults = results.paging.total_results
-            maxPage = results.paging.max_page
+         const results = user_uuid
+            ? await this.postService.findPosts({ user_uuid }, { page, limit })
+            : await this.postService.findPosts(undefined, { page, limit })
 
-            const postsPromise = results.posts.map(async (post) => this.transformPostToDTO(post))
-            posts = await Promise.all(postsPromise)
+         totalResults = results.paging.total_results
+         maxPage = results.paging.max_page
+
+         const postsPromise = results.posts.map(async (post) => this.transformPostToDTO(post))
+         posts = await Promise.all(postsPromise)
+      } catch (error: unknown) {
+         if (error instanceof PostServiceException && error.name === 'user_not_found') {
+            const exception = ExceptionFactory.notFound('User not found')
+            return this.res.status(exception.status).json(exception.toJSON())
          }
 
-         if (user_uuid) {
-            const results = await this.postService.findUserPosts({ user_uuid }, { page, limit })
-            totalResults = results.paging.total_results
-            maxPage = results.paging.max_page
-
-            const postsPromise = results.posts.map(async (post) => this.transformPostToDTO(post))
-            posts = await Promise.all(postsPromise)
-         }
-      } catch (error) {
          return this.next(error)
       }
 
@@ -62,10 +74,11 @@ export default class GetPostsController {
       return this.res.status(200).json(response)
    }
 
-   private async transformPostToDTO(post: PostType | UserPostType): Promise<Post> {
-      const user = await this.userService.findUser({ _id: post.user.toString() })
-
-      if (!user) throw new Error('User not found')
+   private async transformPostToDTO(post: Awaited<ReturnType<PostService['findPosts']>>['posts'][number]): Promise<Post> {
+      const [user, profile] = await Promise.all([
+         this.userService.findUser({ uuid: post.user_uuid }),
+         this.profileService.findProfile({ user_uuid: post.user_uuid })
+      ])
 
       const newPost = new Post({
          uuid: post.uuid,
@@ -74,20 +87,18 @@ export default class GetPostsController {
          images: post.images,
          user: new User({
             uuid: user.uuid,
-            email: user.email,
             username: user.username,
-            description: user.description,
-            name: user.name,
-            avatar: user.avatar,
-            header: user.header,
-            followers: user.followers.length,
-            follows: user.follows.length,
-            posts: user.posts.length
+            name: profile.name,
+            avatar: profile.avatar,
+            header: profile.header,
+            followers: profile.followers.length,
+            follows: profile.follows.length,
+            posts: profile.posts.length
          })
       })
 
-      if('type' in post) newPost.setType = post.type
-      if('reposted_at' in post) newPost.setRepostedAt = post.reposted_at.toString()
+      if('type' in post) newPost.setType = post.type as 'post' | 'repost'
+      if('reposted_at' in post) newPost.setRepostedAt = (post.reposted_at as Date).toString()
 
       return newPost
    }

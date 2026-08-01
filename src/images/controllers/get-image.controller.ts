@@ -31,7 +31,7 @@ export default class GetImageController {
          }
 
          pathname = path.join(ImageService.folder_pathname, image.name)
-      } catch (error) {
+      } catch (error: unknown) {
          return this.next(error)
       }
 

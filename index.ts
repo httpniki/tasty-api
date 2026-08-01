@@ -24,7 +24,6 @@ import UserRouter from './src/user/user.router.js'
 declare module 'express' {
    interface Request {
       session?: {
-         user_id: string
          user_uuid: string
       }
    }
@@ -44,7 +43,7 @@ class ServerBootstrap extends ServerConfig {
       super()
 
       this.app.disable('x-powered-by')
-      this.app.use(cors())
+      this.app.use(cors({ origin: this.CLIENT_ORIGIN, credentials: true }))
       this.app.use(json())
       this.app.use(express.urlencoded({ extended: true }))
       this.app.use(express.static(ImageService.folder_pathname))

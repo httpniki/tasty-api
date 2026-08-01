@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express'
 
 import { ExceptionFactory } from '../shared/response/http/ExceptionFactory'
+import AuthServiceException from './errors/AuthServiceException'
 import AccessTokenService from './services/access_token.service'
 import { type TokenPayload } from './types/types'
 
@@ -22,8 +23,8 @@ export class Auth {
             }
 
             if (!req.headers.authorization.toLowerCase().startsWith('bearer ')) {
-               const expception = ExceptionFactory.invalidAccessToken('Invalid access token')
-               return res.status(expception.status).json(expception.toJSON())
+               const exception = ExceptionFactory.invalidAccessToken('Invalid access token')
+               return res.status(exception.status).json(exception.toJSON())
             }
 
             const accessToken = req.headers.authorization.split(' ')[1]
@@ -31,27 +32,25 @@ export class Auth {
             let isRevoked = false
 
             try {
-               const decodeResult = accessTokenService.decodeToken(accessToken)
-
-               if (decodeResult.error_name === 'invalid_access_token') {
+               decodedToken = accessTokenService.decodeToken(accessToken)
+            } catch (error) {
+               if (error instanceof AuthServiceException && error.name === 'invalid_access_token') {
                   const exception = ExceptionFactory.invalidAccessToken()
                   return res.status(exception.status).json(exception.toJSON())
                }
 
-               if (decodeResult.error_name === 'expired_access_token') {
+               if (error instanceof AuthServiceException && error.name === 'expired_access_token') {
                   const exception = ExceptionFactory.expiredAccessToken()
                   return res.status(exception.status).json(exception.toJSON())
                }
 
-               decodedToken = decodeResult.payload
-            } catch (error) {
                return next(error)
             }
 
             try {
                isRevoked = await accessTokenService.isTokenRevoked(accessToken)
-            } catch (err) {
-               return next(err)
+            } catch (error) {
+               return next(error)
             }
 
             if (isRevoked) {
@@ -61,18 +60,17 @@ export class Auth {
 
             try {
                await accessTokenService.revokeAccessToken(
-                  accessToken, 
+                  accessToken,
                   'consumed',
                   decodedToken.jwtId,
-                  decodedToken.user_id,
+                  decodedToken.user_uuid,
                   decodedToken.exp
                )
-            } catch (err) {
-               return next(err)
+            } catch (error) {
+               return next(error)
             }
 
             req.session = {
-               user_id: decodedToken.user_id,
                user_uuid: decodedToken.user_uuid
             }
 

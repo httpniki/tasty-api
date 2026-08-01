@@ -4,6 +4,7 @@ import { Auth } from '@/auth/auth.decorator'
 
 import CheckAvailabilityController from './controllers/check-availability.controller'
 import FollowUserController from './controllers/follow-user.controller'
+import GetCurrentUserController from './controllers/get-current-user.controller'
 import GetProfileController from './controllers/get-profile.controller'
 import RegisterController from './controllers/register.controller'
 import SearchUsersController from './controllers/search-users.controller'
@@ -42,5 +43,10 @@ export default class UserController {
    @Auth.consumeAccess()
    async updateProfile(req: Request, res: Response, next: NextFunction) {
       return new UpdateProfileController(req, res, next)
+   }
+
+   @Auth.consumeAccess()
+   async getCurrentUser(req: Request, res: Response, next: NextFunction) {
+      return new GetCurrentUserController(req, res, next)
    }
 }

@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 
+import PostServiceException from '../errors/PostServiceException'
 import PostService from '../services/post.service'
 
 interface Params { uuid: string }
@@ -20,21 +21,23 @@ export default class RepostController {
    }
 
    private async execute() {
-      const { uuid } = this.req.params
-      const { user_uuid } = this.req.session
-
       if (!this.req.session) return this.next(new Error('Session not found'))
+
+      const { user_uuid } = this.req.session
+      const { uuid } = this.req.params
 
       try {
          await this.postService.repost(uuid, user_uuid)
-      } catch (error: any) {
+      } catch (error: unknown) {
+         if (!(error instanceof PostServiceException)) return this.next(error)
+
          if (error.name === 'post_not_found') {
-            const exception = ExceptionFactory.notFound('Post not found')
+            const exception = ExceptionFactory.notFound(error.message)
             return this.res.status(exception.status).json(exception.toJSON())
          }
 
-         if (error.name === 'post_already_reposted') {
-            const exception = ExceptionFactory.invalidParam('Post already reposted')
+         if (error.name === 'post_validation_error') {
+            const exception = ExceptionFactory.invalidInput(error.message, error.data)
             return this.res.status(exception.status).json(exception.toJSON())
          }
 

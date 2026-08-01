@@ -1,8 +1,10 @@
 import type { NextFunction, Request, Response } from 'express'
 import type { ParamsDictionary } from 'express-serve-static-core'
 
-import { ExceptionFactory } from '../../shared/response/http/ExceptionFactory'
-import UserModel from '../models/user.model.js'
+import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
+
+import UserServiceException from '../errors/UserServiceException'
+import UserModel from '../models/user.model'
 import UserService from '../services/user.service'
 
 interface DataDTO {
@@ -22,7 +24,7 @@ class ResponseDTO {
    }
 
    public toJSON() {
-      return  {
+      return {
          isAvailable: this.isAvailable,
          message: this.message,
          data: this.data
@@ -50,11 +52,18 @@ export default class CheckAvailabilityController {
 
       if (this.req.headers['content-type'] !== 'application/json') {
          const exception = ExceptionFactory.contentTypeNotSupport('expected application/json')
-         return this.next(exception)
+         return this.res.status(exception.status).json(exception.toJSON())
       }
 
-      if (!field || !value) return this.next(ExceptionFactory.invalidInput('field and value are required'))
-      if (!['username', 'email'].includes(field)) return this.next(ExceptionFactory.invalidInput('field must be username or email'))
+      if (!field || !value) {
+         const exception = ExceptionFactory.invalidInput('field and value are required')
+         return this.res.status(exception.status).json(exception.toJSON())
+      }
+
+      if (!['username', 'email'].includes(field)) {
+         const exception = ExceptionFactory.invalidInput('field must be username or email')
+         return this.res.status(exception.status).json(exception.toJSON())
+      }
 
       if (field === 'email' && value.length > UserModel.schema['tree'].email.maxlength[0]) {
          const response = new ResponseDTO({
@@ -76,16 +85,20 @@ export default class CheckAvailabilityController {
 
       try {
          if (field === 'username') {
-            const user = await this.userService.findUser({ username: value })
-            isAvailable = !user
+            await this.userService.findUser({ username: value })
+            isAvailable = false
          }
 
          if (field === 'email') {
-            const user = await this.userService.findUser({ email: value })
-            isAvailable = !user
+            await this.userService.findUser({ email: value })
+            isAvailable = false
          }
       } catch (error) {
-         return this.next(error)
+         if (error instanceof UserServiceException && error.name === 'user_not_found') {
+            isAvailable = true
+         } else {
+            return this.next(error)
+         }
       }
 
       const capitalized = field.split('').map((char, index) => index === 0 ? char.toUpperCase() : char).join('')

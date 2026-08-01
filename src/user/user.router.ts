@@ -26,6 +26,7 @@ export default class UserRouter extends BaseRouter<UserMiddleware, UserControlle
          this.controller.updateProfile
       )
 
+      this.router.get('/user/me', this.controller.getCurrentUser)
       this.router.post('/user/check-availability', this.controller.checkAvailability)
       this.router.get('/user/search', this.controller.searchUsers)
       this.router.get('/user/:username', this.controller.getProfile)

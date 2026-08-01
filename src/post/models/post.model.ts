@@ -1,22 +1,31 @@
-import mongoose, { model, Schema } from 'mongoose'
+import type mongoose from 'mongoose'
+import { model, Schema } from 'mongoose'
 import mongooseUniqueValidator from 'mongoose-unique-validator'
 
 import UserModel from '@/user/models/user.model'
 
-import { type IPost } from '../types/types'
+export interface IPost {
+   _id: mongoose.Types.ObjectId
+   content: string
+   created_at: Date
+   uuid: string
+   user: mongoose.Types.ObjectId
+   user_uuid: string
+   images: string[]
+}
 
 const post_schema = new Schema<IPost>({
    content: { type: String, require: true },
    created_at: { type: Date, require: true, default: Date.now },
    uuid: { type: String, require: true, unique: true },
-   user: mongoose.Schema.Types.ObjectId,
    user_uuid: { type: String, require: true },
    images: {
       type: [String],
       default: [],
       validate: {
          validator: (v: string[]) => v.length <= 4,
-         message: 'A post can have at most 4 images'
+         message: 'A post can have at most 4 images',
+         name: 'too_many_images'
       }
    }
 })

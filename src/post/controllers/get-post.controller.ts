@@ -1,11 +1,13 @@
 import type { NextFunction, Request, Response } from 'express'
 
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
-import UserService, { type User as UserType } from '@/user/services/user.service'
+import ProfileService from '@/user/services/profile.service'
+import UserService from '@/user/services/user.service'
 
 import Post from '../dto/post'
 import User from '../dto/user'
-import PostService, { type Post as PostType } from '../services/post.service'
+import PostServiceException from '../errors/PostServiceException'
+import PostService from '../services/post.service'
 
 export default class GetPostController {
    private req: Request<{ post_uuid: string }>
@@ -13,6 +15,7 @@ export default class GetPostController {
    private next: NextFunction
    private readonly postService = new PostService()
    private readonly userService = new UserService()
+   private readonly profileService = new ProfileService()
 
    constructor(req: Request, res: Response, next: NextFunction) {
       this.req = req as Request<{ post_uuid: string }>
@@ -23,29 +26,29 @@ export default class GetPostController {
 
    private async execute() {
       const { post_uuid } = this.req.params
-      let post: PostType | null = null
-      let user: UserType | null = null
+      let post: Awaited<ReturnType<PostService['findPost']>>
 
       try {
          post = await this.postService.findPost({ uuid: post_uuid })
-      } catch (error) {
+      } catch (error: unknown) {
+         if (error instanceof PostServiceException && error.name === 'post_not_found') {
+            const exception = ExceptionFactory.notFound(error.message)
+            return this.res.status(exception.status).json(exception.toJSON())
+         }
+
          return this.next(error)
       }
 
-      if (!post) {
-         const exception = ExceptionFactory.notFound('Post not found')
-         return this.res.status(exception.status).json(exception.toJSON())
-      }
+      let user: Awaited<ReturnType<UserService['findUser']>>
+      let profile: Awaited<ReturnType<ProfileService['findProfile']>>
 
       try {
-         user = await this.userService.findUser({ _id: post.user.toString() })
-      } catch (error) {
+         [user, profile] = await Promise.all([
+            this.userService.findUser({ uuid: post.user_uuid }),
+            this.profileService.findProfile({ user_uuid: post.user_uuid })
+         ])
+      } catch (error: unknown) {
          return this.next(error)
-      }
-
-      if (!user) {
-         const exception = new Error('Post owner not found')
-         return this.next(exception)
       }
 
       const dto = new Post({
@@ -55,15 +58,13 @@ export default class GetPostController {
          images: post.images,
          user: new User({
             uuid: user.uuid,
-            email: user.email,
             username: user.username,
-            description: user.description,
-            name: user.name,
-            avatar: user.avatar,
-            header: user.header,
-            followers: user.followers.length,
-            follows: user.follows.length,
-            posts: user.posts.length
+            name: profile.name,
+            avatar: profile.avatar,
+            header: profile.header,
+            followers: profile.followers.length,
+            follows: profile.follows.length,
+            posts: profile.posts.length
          })
       })
 

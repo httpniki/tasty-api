@@ -5,7 +5,6 @@ export interface TokenOptions {
 }
 
 export interface TokenBody {
-   user_id: IUser['_id'] | string
    user_uuid: IUser['uuid'] | string
 }
 

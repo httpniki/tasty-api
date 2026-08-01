@@ -1,10 +1,12 @@
 import { type NextFunction, type Request, type Response } from 'express'
 
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
+import ProfileService from '@/user/services/profile.service'
 import UserService from '@/user/services/user.service'
 
 import Message from '../dto/Message'
 import User from '../dto/User'
+import ChatServiceException from '../errors/ChatServiceException'
 import ChatService, { type Chat as ChatType } from '../services/chat.service'
 
 interface RequestQuery {
@@ -13,22 +15,25 @@ interface RequestQuery {
 }
 
 export default class GetChatController {
-   private req: Request<{ id: string }, any, any, RequestQuery>
+   private req: Request<{ uuid: string }, any, any, RequestQuery>
    private res: Response
    private next: NextFunction
-   private userService = new UserService()
-   private chatService = new ChatService()
+   private readonly userService = new UserService()
+   private readonly profileService = new ProfileService()
+   private readonly chatService = new ChatService()
 
    constructor(req: Request, res: Response, next: NextFunction) {
-      this.req = req as unknown as Request<{ id: string }, any, any, RequestQuery>
+      this.req = req as unknown as Request<{ uuid: string }, any, any, RequestQuery>
       this.res = res
       this.next = next
       this.execute()
    }
 
    public async execute() {
+      if (!this.req.session) return this.next(new Error('Session not found'))
+
       const { user_uuid } = this.req.session
-      const { id } = this.req.params
+      const { uuid } = this.req.params
       const page = parseInt(this.req.query.page ?? '1')
       const limit = parseInt(this.req.query.limit ?? '20')
       let chat: ChatType
@@ -44,24 +49,21 @@ export default class GetChatController {
       }
 
       try {
-         const result = await this.chatService.findConversation({ uuid: id })
-         if (!result) {
+         chat = await this.chatService.findConversation({ uuid: uuid })
+      } catch (error: unknown) {
+         if (error instanceof ChatServiceException && error.name === 'chat_not_found') {
             const exception = ExceptionFactory.notFound('Chat not found')
             return this.res.status(exception.status).json(exception.toJSON())
          }
-         chat = result
-      } catch (error) {
+
          return this.next(error)
       }
 
-      try {
-         const isParticipant = await this.userIsParticipant(user_uuid, chat.users)
-         if (!isParticipant) {
-            const exception = ExceptionFactory.forbidden
-            return this.res.status(exception.status).json(exception.toJSON())
-         }
-      } catch (error) {
-         return this.next(error)
+      const isParticipant = chat.users.includes(user_uuid)
+
+      if (!isParticipant) {
+         const exception = ExceptionFactory.forbidden
+         return this.res.status(exception.status).json(exception.toJSON())
       }
 
       try {
@@ -81,28 +83,23 @@ export default class GetChatController {
                max_page: Math.max(1, Math.ceil(totalMessages / limit))
             }
          })
-      } catch (error) {
+      } catch (error: unknown) {
          return this.next(error)
       }
    }
 
-   private async userIsParticipant(user_uuid: string, chatUserIds: ChatType['users']): Promise<boolean> {
-      const user = await this.userService.findUser({ uuid: user_uuid })
-      if (!user) return false
-      const userId = user._id.toString()
-      return chatUserIds.some((id) => id.toString() === userId)
-   }
-
    private async transformMessagesToDTO(messages: ChatType['messages']): Promise<Message[]> {
       const promise = messages.map(async (message) => {
-         const user = await this.userService.findUser({ uuid: message.user_id })
-         if (!user) throw new Error('User not found')
+         const [user, profile] = await Promise.all([
+            this.userService.findUser({ uuid: message.user_uuid }),
+            this.profileService.findProfile({ user_uuid: message.user_uuid })
+         ])
 
          const userDTO = new User({
             uuid: user.uuid,
-            name: user.name,
+            name: profile.name,
             username: user.username,
-            avatar: user.avatar
+            avatar: profile.avatar
          })
 
          return new Message({

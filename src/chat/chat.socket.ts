@@ -2,6 +2,7 @@ import { type Namespace, type Server } from 'socket.io'
 import { type Socket } from 'socket.io'
 import { type DefaultEventsMap } from 'socket.io/dist/typed-events'
 
+import AuthServiceException from '@/auth/errors/AuthServiceException'
 import AccessTokenService from '@/auth/services/access_token.service'
 import { type TokenPayload } from '@/auth/types/types'
 import ChatError, { ErrorName } from '@/chat/dto/ChatError'
@@ -24,23 +25,21 @@ export default class ChatSocket {
 
       this.namespace.use(async (socket, next) => {
          const token = socket.handshake.auth.token
-         let tokenPayload: TokenPayload = null
+         let tokenPayload: TokenPayload
 
          try {
-            const decodedToken = this.accessTokenService.decodeToken(token)
-
-            if (decodedToken.error_name === 'expired_access_token') {
-               const err = new ChatError(ErrorName.EXPIRED_ACCESS_TOKEN, 'Expired access token')
-               return next(err.toNativeError())
-            }
-
-            if (decodedToken.error_name === 'invalid_access_token') {
-               const err = new ChatError(ErrorName.INVALID_ACCESS_TOKEN, 'Invalid access token')
-               return next(err.toNativeError())
-            }
-
-            tokenPayload = decodedToken.payload
+            tokenPayload = this.accessTokenService.decodeToken(token)
          } catch (err: unknown) {
+            if (err instanceof AuthServiceException && err.name === 'expired_access_token') {
+               const chatError = new ChatError(ErrorName.EXPIRED_ACCESS_TOKEN, 'Expired access token')
+               return next(chatError.toNativeError())
+            }
+
+            if (err instanceof AuthServiceException && err.name === 'invalid_access_token') {
+               const chatError = new ChatError(ErrorName.INVALID_ACCESS_TOKEN, 'Invalid access token')
+               return next(chatError.toNativeError())
+            }
+
             const chatError = new ChatError(ErrorName.INTERNAL_SERVER_ERROR, 'Internal Server Error', err)
             return next(chatError.toNativeError())
          }
@@ -57,7 +56,7 @@ export default class ChatSocket {
                token,
                'consumed',
                tokenPayload.jwtId,
-               tokenPayload.user_id,
+               tokenPayload.user_uuid,
                tokenPayload.exp
             )
          } catch (err: unknown) {

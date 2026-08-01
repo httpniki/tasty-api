@@ -3,10 +3,11 @@ import type { NextFunction, Request, Response } from 'express'
 import NotificationDTO from '@/notification/dto/Notification'
 import NotificationSocket from '@/notification/notification.socket'
 import NotificationService from '@/notification/services/notification.service'
-import { ServiceErrorName } from '@/shared/errors/ServiceError'
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 
-import UserModel from '../models/user.model'
+import ProfileServiceException from '../errors/ProfileServiceException'
+import UserServiceException from '../errors/UserServiceException'
+import ProfileService from '../services/profile.service'
 import UserService from '../services/user.service'
 
 interface Params {
@@ -18,6 +19,7 @@ export default class FollowUserController {
    private res: Response
    private next: NextFunction
    private readonly userService = new UserService()
+   private readonly profileService = new ProfileService()
 
    constructor(req: Request, res: Response, next: NextFunction) {
       this.req = req as unknown as Request<Params>
@@ -29,54 +31,27 @@ export default class FollowUserController {
 
    async execute() {
       const { username } = this.req.params
-      let targetId: string | null = null
-      let targetUser: Awaited<ReturnType<typeof this.userService.findUser>> = null
 
-      const result = this.validateUsername(username)
-      if (!result.isValid && result.error) return this.next(result.error)
+      if (!this.req.session) return this.next(new Error('Authenticated session not found'))
 
-      if (!result.isValid && !result.error) {
-         const exception = ExceptionFactory.invalidParam(result.message)
-         return this.res.status(exception.status).json(exception.toJSON())
-      }
+      let targetUser: Awaited<ReturnType<UserService['findUser']>>
 
       try {
-         targetUser = await this.userService.findUser({ username: { $regex: new RegExp(`${username}`, 'i') } })
-
-         if (!targetUser) {
+         targetUser = await this.userService.findUser({ username })
+      } catch (error) {
+         if (error instanceof UserServiceException && error.name === 'user_not_found') {
             const exception = ExceptionFactory.notFound('User not found')
             return this.res.status(exception.status).json(exception.toJSON())
          }
 
-         targetId = targetUser._id.toString()
-      } catch (error) {
          return this.next(error)
       }
 
-      if (!this.req.session) return this.next(new Error('Session not found'))
-
-      const currentId = this.req.session.user_id
-
-      if (currentId === targetId) {
-         const exception = ExceptionFactory.invalidParam('You cannot follow yourself')
-         return this.res.status(exception.status).json(exception.toJSON())
-      }
-
-      let currentUser: Awaited<ReturnType<typeof this.userService.findUser>> = null
-
       try {
-         currentUser = await this.userService.findUser({ _id: currentId })
+         await this.profileService.syncUserRelationship(this.req.session.user_uuid, targetUser.uuid, 'FOLLOW')
       } catch (error) {
-         return this.next(error)
-      }
-
-      if (!currentUser) return this.next(new Error('Session user not found'))
-
-      try {
-         await this.userService.syncUserRelationship(currentId, targetId, 'FOLLOW')
-      } catch (error) {
-         if (error.name === ServiceErrorName.InvalidInput) {
-            const exception = ExceptionFactory.invalidParam('User already followed')
+         if (error instanceof ProfileServiceException && error.name === 'validation_error') {
+            const exception = ExceptionFactory.invalidParam(error.message)
             return this.res.status(exception.status).json(exception.toJSON())
          }
 
@@ -89,44 +64,17 @@ export default class FollowUserController {
          const notification = await notificationService.createNotification({
             user_uuid: targetUser.uuid,
             type: 'follow',
-            reference_uuid: currentUser.uuid,
-            message: `${currentUser.username} started following you`
+            reference_uuid: this.req.session.user_uuid,
+            message: `${this.req.session.user_uuid} started following you`
          })
 
          const dto = new NotificationDTO(notification)
 
          NotificationSocket.emitToUser(targetUser.uuid, 'receive', dto)
-      } catch (error) {
+      } catch (error: unknown) {
          console.error('Failed to create follow notification:', error)
       }
 
       return this.res.status(200).json()
-   }
-
-   private validateUsername(username?: string) {
-      const result = { isValid: true, message: '', error: null as Error | null }
-
-      if (!username) {
-         result.message = 'Username is not provided'
-         result.isValid = false
-      }
-
-      const regexpValidator = UserModel.schema.path('username').validators.find((el) => el.type === 'regexp')
-
-      if (!regexpValidator) {
-         result.message = 'Regex validator not found'
-         result.isValid = false
-         result.error = new Error('Regex validator not found')
-      }
-
-      const message = regexpValidator.message
-      const isValid = regexpValidator.validator(username)
-
-      if (!isValid) {
-         result.message = message
-         result.isValid = false
-      }
-
-      return result
    }
 }

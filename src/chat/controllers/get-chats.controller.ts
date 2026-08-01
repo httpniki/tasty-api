@@ -3,11 +3,13 @@ import { type ParamsDictionary } from 'express-serve-static-core'
 
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 import PaginatedResponse, { Paging } from '@/shared/response/http/PaginatedResponse'
-import UserService, { type User as UserServiceType } from '@/user/services/user.service'
+import ProfileService from '@/user/services/profile.service'
+import UserService from '@/user/services/user.service'
 
 import Conversation from '../dto/Conversation'
 import Message from '../dto/Message'
 import User from '../dto/User'
+import ChatServiceException from '../errors/ChatServiceException'
 import ChatService, { type Chat as ChatType } from '../services/chat.service'
 
 interface RequestQuery {
@@ -19,8 +21,9 @@ export default class GetChatsController {
    private req: Request<ParamsDictionary, any, any, RequestQuery>
    private res: Response
    private next: NextFunction
-   private userService = new UserService()
-   private chatService = new ChatService()
+   private readonly userService = new UserService()
+   private readonly profileService = new ProfileService()
+   private readonly chatService = new ChatService()
 
    constructor(req: Request, res: Response, next: NextFunction) {
       this.req = req
@@ -30,10 +33,12 @@ export default class GetChatsController {
    }
 
    public async execute() {
+      if (!this.req.session) return this.next(new Error('Session not found'))
+
       const { user_uuid } = this.req.session
       const page = parseInt(this.req.query.page ?? '1')
       const limit = parseInt(this.req.query.limit ?? '5')
-      let user: UserServiceType
+      let profile: Awaited<ReturnType<ProfileService['findProfile']>>
       let chats: ChatType[]
       let dto: Conversation[]
 
@@ -48,43 +53,52 @@ export default class GetChatsController {
       }
 
       try {
-         const result = await this.userService.findUser({ uuid: user_uuid })
-         if (!result) throw new Error('Authenticated user not found')
-
-         user = result
-      } catch (error) {
+         profile = await this.profileService.findProfile({ user_uuid })
+      } catch (error: unknown) {
          return this.next(error)
       }
 
       try {
-         chats = await this.getChats(user.chats.slice((page - 1) * limit, page * limit))
+         chats = await this.getChats(profile.chats.slice((page - 1) * limit, page * limit))
          dto = await Promise.all(chats.map(async (chat) => await this.transformChatToConversation(chat)))
-      } catch (error) {
+      } catch (error: unknown) {
          return this.next(error)
       }
 
-      const paging = new Paging({ page, limit, total_results: chats.length, max_page: Math.ceil(chats.length / limit) })
+      const paging = new Paging({ page, limit, total_results: profile.chats.length, max_page: Math.ceil(profile.chats.length / limit) })
       const response = new PaginatedResponse(dto, paging)
 
       return this.res.status(200).json(response)
    }
 
-   private async getChats(user_chats: UserServiceType['chats']) {
-      const chatPromise = user_chats.map(async (chat) => await this.chatService.findConversation({ uuid: chat.uuid }))
-      return await Promise.all(chatPromise)
+   private async getChats(user_chats: Awaited<ReturnType<ProfileService['findProfile']>>['chats']) {
+      const results = await Promise.all(
+         user_chats.map(async (chat) => {
+            try {
+               return await this.chatService.findConversation({ uuid: chat.uuid })
+            } catch (error) {
+               if (error instanceof ChatServiceException && error.name === 'chat_not_found') return null
+               throw error
+            }
+         })
+      )
+
+      return results.filter((chat): chat is ChatType => chat !== null)
    }
 
    private async getUsersFromChat(chat: ChatType): Promise<User[]> {
       return await Promise.all(
-         chat.users.map(async (userId) => {
-            const user = await this.userService.findUser({ _id: userId.toString() })
-            if (!user) throw new Error('Chat user not found')
+         chat.users.map(async (user_uuid) => {
+            const [user, profile] = await Promise.all([
+               this.userService.findUser({ uuid: user_uuid }),
+               this.profileService.findProfile({ user_uuid })
+            ])
 
             return new User({
                uuid: user.uuid,
-               name: user.name,
+               name: profile.name,
                username: user.username,
-               avatar: user.avatar
+               avatar: profile.avatar
             })
          })
       )
@@ -94,14 +108,16 @@ export default class GetChatsController {
       const last = chat.messages[chat.messages.length - 1]
       if (!last) throw new Error('Chat has no messages')
 
-      const user = await this.userService.findUser({ uuid: last.user_id })
-      if (!user) throw new Error('Last message user not found')
+      const [user, profile] = await Promise.all([
+         this.userService.findUser({ uuid: last.user_uuid }),
+         this.profileService.findProfile({ user_uuid: last.user_uuid })
+      ])
 
       const userDTO = new User({
          uuid: user.uuid,
-         name: user.name,
+         name: profile.name,
          username: user.username,
-         avatar: user.avatar
+         avatar: profile.avatar
       })
 
       return new Message({

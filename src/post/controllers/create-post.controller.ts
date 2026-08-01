@@ -1,11 +1,14 @@
 import type { NextFunction, Request, Response } from 'express'
 
 import ImageService from '@/images/image.service'
-import UserService, { type User } from '@/user/services/user.service'
+import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
+import ProfileService from '@/user/services/profile.service'
+import UserService from '@/user/services/user.service'
 
 import PostDTO from '../dto/post'
 import UserDTO from '../dto/user'
-import PostService, { type Post } from '../services/post.service'
+import PostServiceException from '../errors/PostServiceException'
+import PostService from '../services/post.service'
 
 interface RequestBody {
    content: string
@@ -18,6 +21,7 @@ export default class CreatePostController {
    private readonly postService = new PostService()
    private readonly userService = new UserService()
    private readonly imageService = new ImageService()
+   private readonly profileService = new ProfileService()
 
    constructor(req: Request<any, any, RequestBody>, res: Response, next: NextFunction) {
       this.req = req
@@ -29,46 +33,57 @@ export default class CreatePostController {
    async execute() {
       const { content } = this.req.body
 
-      if (!this.req.session) return this.next(new Error('Session not found'))
-      const { user_id, user_uuid } = this.req.session
+      if (!this.req.session) return this.next(new Error('Authenticated session not found'))
+      const { user_uuid } = this.req.session
       const files = this.req.files
 
-      const imageUuids: string[] = []
-
-      if (files && 'images' in files) {
-         for (const file of files.images) {
-            const saved = await this.imageService.saveImage(file)
-            const uuid = saved.name.split('.')[0]
-            imageUuids.push(uuid)
-         }
-      }
-
-      let post: Post
-      let user: User
+      let post: Awaited<ReturnType<PostService['createPost']>>
+      let user: Awaited<ReturnType<UserService['findUser']>>
+      let profile: Awaited<ReturnType<ProfileService['findProfile']>>
 
       try {
-         user = await this.userService.findUser({ _id: user_id })
-         if (!user) throw Error('User not found in database on create post')
-      } catch (error) {
+         profile = await this.profileService.findProfile({ user_uuid })
+         user = await this.userService.findUser({ uuid: user_uuid })
+      } catch (error: unknown) {
          return this.next(error)
+      }
+
+      const imagesIDs: string[] = []
+
+      try {
+         if (files && 'images' in files) {
+            for (const file of files.images) {
+               const saved = await this.imageService.saveImage(file)
+               const uuid = saved.name.split('.')[0]
+               imagesIDs.push(uuid)
+            }
+         }
+      } catch (err: unknown) {
+         return this.next(err)
       }
 
       try {
          post = await this.postService.createPost({
             user_uuid,
             content,
-            user: user_id,
-            images: imageUuids,
+            images: imagesIDs
          })
-      } catch (error) {
+      } catch (error: unknown) {
+         if (!(error instanceof PostServiceException)) return this.next(error)
+
+         if (error.name === 'post_validation_error') {
+            const exception = ExceptionFactory.invalidInput(error.message, error.data)
+            return this.res.status(exception.status).json(exception.toJSON())
+         }
+
          return this.next(error)
       }
 
-      user.posts.push({ uuid: post.uuid, type: 'post', created_at: post.created_at })
+      profile.posts.push({ uuid: post.uuid, type: 'post', created_at: post.created_at })
 
       try {
-         await this.userService.updateUser(user._id.toString(), { posts: user.posts })
-      } catch (error) {
+         await this.profileService.updateProfile(user_uuid, { posts: profile.posts })
+      } catch (error: unknown) {
          return this.next(error)
       }
 
@@ -79,16 +94,14 @@ export default class CreatePostController {
          type: 'post',
          images: post.images,
          user: new UserDTO({
-            uuid: user.uuid,
-            email: user.email,
+            uuid: user_uuid,
             username: user.username,
-            description: user.description,
-            name: user.name,
-            avatar: user.avatar,
-            header: user.header,
-            followers: user.followers.length,
-            follows: user.follows.length,
-            posts: user.posts.length
+            name: profile.name,
+            avatar: profile.avatar,
+            header: profile.header,
+            followers: profile.followers.length,
+            follows: profile.follows.length,
+            posts: profile.posts.length
          })
       })
 

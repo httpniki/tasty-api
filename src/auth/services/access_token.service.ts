@@ -1,55 +1,23 @@
 import jwt from 'jsonwebtoken'
 import { v4 as uuid } from 'uuid'
 
-import ServiceError, { ServiceErrorName } from '@/shared/errors/ServiceError'
-
+import { AuthServiceExceptionFactory } from '../errors/AuthServiceException'
 import RevokedTokenModel, { type IRevokedToken } from '../models/revoked_token.model'
 import { type TokenBody, type TokenOptions, type TokenPayload } from '../types/types'
 
-interface DecodeResult {
-   payload: TokenPayload | null
-   error_name?: 'invalid_access_token' | 'expired_access_token'
-   message?: string
-}
-
 export default class AccessTokenService {
-   /***
-      @throws ServiceError.InvalidInput
-   **/
-   public decodeToken(token: string): DecodeResult {
-      const result: DecodeResult = { payload: null }
+   public decodeToken(token: string): TokenPayload {
+      let payload: TokenPayload
 
       try {
-         result.payload = jwt.verify(token, process.env.AUTH_TOKEN_PRIVATE_KEY as string) as TokenPayload
-
-         if (!result.payload.exp) {
-            result.error_name = 'invalid_access_token'
-            result.message = 'Invalid access token'
-            return result
-         }
-
-         if (!result.payload.jwtId) {
-            result.error_name = 'invalid_access_token'
-            result.message = 'Invalid access token'
-            return result
-         }
+         payload = jwt.verify(token, process.env.AUTH_TOKEN_PRIVATE_KEY as string) as TokenPayload
       } catch (err) {
-         if (err instanceof jwt.TokenExpiredError) {
-            result.error_name = 'expired_access_token'
-            result.message = 'Expired access token'
-            return result
-         }
-
-         if (err instanceof jwt.JsonWebTokenError) {
-            result.error_name = 'invalid_access_token'
-            result.message = 'Invalid access token'
-            return result
-         }
-
-         throw new ServiceError(ServiceErrorName.InvalidInput, err.message, err)
+         if (err instanceof jwt.TokenExpiredError) throw AuthServiceExceptionFactory.expiredAccessToken()
+         if (err instanceof jwt.JsonWebTokenError) throw AuthServiceExceptionFactory.invalidAccessToken()
+         throw err
       }
 
-      return result
+      return payload
    }
 
    public generateJWT(body: TokenBody, opts?: TokenOptions): string {
@@ -63,9 +31,6 @@ export default class AccessTokenService {
       return jwt.sign(payload, process.env.AUTH_TOKEN_PRIVATE_KEY as string)
    }
 
-   /***
-      @throws ServiceError.DatabaseError
-   **/
    public async revokeAccessToken(
       token: string,
       reason: IRevokedToken['reason'],
@@ -73,33 +38,24 @@ export default class AccessTokenService {
       userId: string,
       expiresAt: number
    ): Promise<void> {
-      try {
-         await RevokedTokenModel.create({
-            uuid: jwtId,
-            token,
-            user: userId,
-            revokedAt: new Date(),
-            expiresAt: new Date(expiresAt * 1000),
-            reason
-         })
-      } catch (err) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, err.message, err)
-      }
+      const revokedTokenModel = new RevokedTokenModel({
+         uuid: jwtId,
+         token,
+         user: userId,
+         revokedAt: new Date(),
+         expiresAt: new Date(expiresAt * 1000),
+         reason
+      })
+
+      await revokedTokenModel.save()
    }
 
-   /***
-      @throws ServiceError.DatabaseError
-   **/
    public async isTokenRevoked(token: string): Promise<boolean> {
-      let isRevoked: boolean | null = null
+      const result = await RevokedTokenModel
+         .findOne()
+         .where({ token })
+         .select({ _id: true })
 
-      try {
-         const result = await RevokedTokenModel.findOne({ token })
-         isRevoked = !!result
-      } catch (err) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, err.message, err)
-      }
-
-      return !!isRevoked
+      return !!result
    }
 }

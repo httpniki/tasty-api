@@ -1,5 +1,7 @@
+import { Error as MongooseError } from 'mongoose'
 import { v4 as uuid } from 'uuid'
 
+import { NotificationServiceExceptionFactory } from '../errors/NotificationServiceException'
 import NotificationModel, { type INotification } from '../models/notification.model'
 
 export type Notification = Omit<INotification, '_id'>
@@ -11,9 +13,20 @@ interface CreateNotificationArgs {
    message: string
 }
 
+interface Paging {
+   page: number
+   limit: number
+   total_results: number
+   max_page: number
+}
+
+interface NotificationsWithPaging {
+   data: Notification[]
+   paging: Paging
+}
+
 export default class NotificationService {
    private projection = {
-      _id: true,
       uuid: true,
       user_uuid: true,
       type: true,
@@ -23,21 +36,25 @@ export default class NotificationService {
       created_at: true
    }
 
-   /**
-      @throws notification_not_found
-   **/
-   async findByUuid(uuid: string): Promise<Notification | null> {
+   async findNotification(uuid: string): Promise<Notification> {
       const result = await NotificationModel
          .findOne()
          .where({ uuid })
          .select(this.projection)
 
-      return result ? result.toObject() : null
+      if (!result) throw NotificationServiceExceptionFactory.notificationNotFound({ uuid })
+
+      return {
+         uuid: result.uuid,
+         user_uuid: result.user_uuid,
+         type: result.type,
+         read: result.read,
+         reference_uuid: result.reference_uuid,
+         message: result.message,
+         created_at: result.created_at
+      }
    }
 
-   /**
-      @throws invalid_input
-   **/
    async createNotification(args: CreateNotificationArgs): Promise<Notification> {
       const notification = new NotificationModel({
          uuid: uuid(),
@@ -49,96 +66,83 @@ export default class NotificationService {
          created_at: new Date()
       })
 
-      const validationError = notification.validateSync()
+      const error = await notification
+         .validate()
+         .catch((err: MongooseError.ValidationError) => Object.values(err.errors)[0])
 
-      if (validationError) {
-         const err = new Error(validationError.message)
-         err.name = 'invalid_input'
-         throw err
-      }
+      if (error && error instanceof MongooseError.ValidatorError) throw NotificationServiceExceptionFactory.validationError(error.message, { [error.path]: error.message })
+      if (error && error instanceof MongooseError.CastError) throw error
 
       const result = await notification.save()
-      return result.toObject()
+
+      return {
+         uuid: result.uuid,
+         user_uuid: result.user_uuid,
+         type: result.type,
+         read: result.read,
+         reference_uuid: result.reference_uuid,
+         message: result.message,
+         created_at: result.created_at
+      }
    }
 
-   async findNotifications(user_uuid: string, page = 1, limit = 20) {
-      let data: Notification[] = []
-      let total = 0
-
-      try {
-         const [results, count] = await Promise.all([
-            NotificationModel
-               .find()
-               .where({ user_uuid })
-               .select(this.projection)
-               .sort({ created_at: -1 })
-               .skip((page - 1) * limit)
-               .limit(limit),
-            NotificationModel.countDocuments({ user_uuid })
-         ])
-
-         data = results.map((n) => n.toObject())
-         total = count
-      } catch (error) {
-         const err = new Error(error.message)
-         err.name = 'database_error'
-         throw err
-      }
+   async findNotifications(user_uuid: string, page = 1, limit = 20): Promise<NotificationsWithPaging> {
+      const [results, totalResults] = await Promise.all([
+         NotificationModel
+            .find()
+            .where({ user_uuid })
+            .select(this.projection)
+            .sort({ created_at: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit),
+         NotificationModel.countDocuments({ user_uuid })
+      ])
 
       return {
          paging: {
             page,
             limit,
-            total_results: total,
-            max_page: Math.ceil(total / limit)
+            total_results: totalResults,
+            max_page: Math.ceil(totalResults / limit)
          },
-         data
+         data: results.map((n) => ({
+            uuid: n.uuid,
+            user_uuid: n.user_uuid,
+            type: n.type,
+            read: n.read,
+            reference_uuid: n.reference_uuid,
+            message: n.message,
+            created_at: n.created_at
+         }))
       }
    }
 
-   /**
-      @throws notification_not_found
-      @throws not_authorized
-   **/
-   async markAsRead(uuid: string, user_uuid: string): Promise<Notification | null> {
-      let notification: Notification | null = null
+   async markAsRead(uuid: string, user_uuid: string): Promise<Notification> {
+      const notification = await NotificationModel
+         .findOne()
+         .where({ uuid })
+         .select(this.projection)
 
-      try {
-         notification = await this.findByUuid(uuid)
-      } catch (error) {
-         const err = new Error(error.message)
-         err.name = 'database_error'
-         throw err
-      }
-
-      if (!notification) {
-         const err = new Error('Notification not found')
-         err.name = 'notification_not_found'
-         throw err
-      }
+      if (!notification) throw NotificationServiceExceptionFactory.notificationNotFound({ uuid })
 
       if (notification.user_uuid !== user_uuid) {
-         const err = new Error('Not authorized to modify this notification')
-         err.name = 'not_authorized'
-         throw err
+         throw NotificationServiceExceptionFactory.notAuthorized({ notification_uuid: uuid })
       }
 
-      let result: Notification | null = null
+      const result = await NotificationModel
+         .findOneAndUpdate({ runValidators: true })
+         .where({ uuid })
+         .set({ read: true })
+         .select(this.projection)
 
-      try {
-         const updated = await NotificationModel.findOneAndUpdate(
-            { uuid },
-            { $set: { read: true } },
-            { new: true }
-         ).select(this.projection)
-
-         result = updated ? updated.toObject() : null
-      } catch (error) {
-         const err = new Error(error.message)
-         err.name = 'database_error'
-         throw err
+      return {
+         uuid: result.uuid,
+         user_uuid: result.user_uuid,
+         type: result.type,
+         read: result.read,
+         reference_uuid: result.reference_uuid,
+         message: result.message,
+         created_at: result.created_at
       }
-
-      return result
    }
 }

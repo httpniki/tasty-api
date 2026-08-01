@@ -1,11 +1,9 @@
-import { type NextFunction, type Request, type Response } from 'express'
-import { type ParamsDictionary } from 'express-serve-static-core'
-
-import UserModel from '@/user/models/user.model'
+import type { NextFunction, Request, Response } from 'express'
 
 import { type ExceptionBody } from '../../shared/response/http/ApiException'
 import { ExceptionFactory } from '../../shared/response/http/ExceptionFactory'
 import UserService from '../../user/services/user.service'
+import AuthServiceException from '../errors/AuthServiceException'
 import AccessTokenService from '../services/access_token.service'
 import AuthService from '../services/auth.service'
 import RefreshTokenService from '../services/refresh_token.service'
@@ -28,12 +26,8 @@ interface TokenDTO {
    refresh_token: string
 }
 
-type User =
-   | Extract<Awaited<ReturnType<typeof AuthService.prototype.authenticate>>, { success: true }>['user']
-   | Extract<Awaited<ReturnType<typeof UserService.prototype.findUser>>, null>
-
 export default class LoginController {
-   private readonly req: Request<ParamsDictionary, any, SignInContract | TokenGrantContract, ReqQuery>
+   private readonly req: Request<any, any, SignInContract | TokenGrantContract, ReqQuery>
    private readonly res: Response<TokenDTO | ExceptionBody>
    private readonly next: NextFunction
    private readonly authService = new AuthService()
@@ -48,9 +42,9 @@ export default class LoginController {
       this.execute()
    }
 
-   private async execute(): Promise<any> {
+   private async execute() {
       const { grant_type } = this.req.query
-      let user: User
+      let user_uuid: string
 
       if (this.req.headers['content-type'] !== 'application/json') {
          const exception = ExceptionFactory.contentTypeNotSupport('Content-Type header must be application/json')
@@ -66,32 +60,22 @@ export default class LoginController {
          const { email, password } = this.req.body as SignInContract
 
          if (!email || !password) {
-            const exception = ExceptionFactory.invalidCredentials((!email) ? 'Email not provided' : 'Password not provided')
-            return this.res.status(exception.status).json(exception.toJSON())
-         }
-
-         if (email.length > UserModel.schema['tree'].email.maxlength[0]) {
-            const exception = ExceptionFactory.invalidCredentials('Email is too long')
-            return this.res.status(exception.status).json(exception.toJSON())
-         }
-
-         if (password.length > UserModel.schema['tree'].password.maxlength[0]) {
-            const exception = ExceptionFactory.invalidCredentials('Password is too long')
+            const exception = ExceptionFactory.invalidCredentials(!email ? 'Email not provided' : 'Password not provided')
             return this.res.status(exception.status).json(exception.toJSON())
          }
 
          try {
-            const result = await this.authService.authenticate({ accessMethod: 'email', email, password })
-            // TODO: Add error when the account does not exist
-            // TODO Implement request limit
-            if (!result.success) {
+            const user = await this.authService.authenticate({ accessMethod: 'email', email, password })
+            user_uuid = user.uuid
+         } catch (error: unknown) {
+            if (!(error instanceof AuthServiceException)) return this.next(error)
+
+            if (error.name === 'not_found' || error.name === 'invalid_credentials') {
                const exception = ExceptionFactory.invalidCredentials('Invalid email or password')
                return this.res.status(exception.status).json(exception.toJSON())
             }
 
-            user = result.user
-         } catch (err) {
-            return this.next(err)
+            return this.next(error)
          }
       }
 
@@ -104,54 +88,58 @@ export default class LoginController {
          }
 
          try {
-            const result = await this.refreshTokenService.verifyToken(refresh_token)
+            const { user_uuid: token_user_uuid } = await this.refreshTokenService.verifyToken(refresh_token)
+            const user = await this.userService.findUser({ uuid: token_user_uuid })
+            user_uuid = user.uuid
+         } catch (error: unknown) {
+            if (!(error instanceof AuthServiceException)) return this.next(error)
 
-            if (result.error_name === 'invalid_refresh_token') {
+            if (error.name === 'invalid_refresh_token') {
                const exception = ExceptionFactory.invalidRefreshToken()
                return this.res.status(exception.status).json(exception.toJSON())
             }
 
-            if (result.error_name === 'expired_refresh_token') {
+            if (error.name === 'expired_refresh_token') {
                const exception = ExceptionFactory.expiredRefreshToken()
                return this.res.status(exception.status).json(exception.toJSON())
             }
 
-            if (result.error_name === 'token_already_used') {
+            if (error.name === 'token_already_used') {
                const exception = ExceptionFactory.tokenAlreadyUsed()
                return this.res.status(exception.status).json(exception.toJSON())
             }
 
-            user = await this.userService.findUser({ _id: result.user_id })
-         } catch (err) {
-            return this.next(err)
+            return this.next(error)
          }
       }
 
-      const tokens: TokenDTO = {} as TokenDTO
       const expiresTokensIn = {
          refresh_token: 15 * 60 * 1000,
          access_token: 3600
       }
 
+      let access_token: string
+      let refresh_token: string
+
       try {
-         tokens['refresh_token'] = await this.refreshTokenService.createToken({
-            user_id: user._id,
+         refresh_token = await this.refreshTokenService.createToken({
+            user_uuid,
             token: 'refresh_token' in this.req.body ? this.req.body.refresh_token : null,
             expires_in: expiresTokensIn.refresh_token
          })
 
-         tokens['access_token'] = this.accessTokenService.generateJWT(
-            { user_id: user._id, user_uuid: user.uuid },
+         access_token = this.accessTokenService.generateJWT(
+            { user_uuid },
             { expiresIn: expiresTokensIn.access_token }
          )
-      } catch (err) {
-         this.next(err)
+      } catch (error: unknown) {
+         return this.next(error)
       }
 
       return this.res
          .status(200)
-         .cookie('access_token', tokens.access_token, { httpOnly: true, maxAge: expiresTokensIn.access_token })
-         .cookie('refresh_token', tokens.refresh_token, { httpOnly: true, maxAge: expiresTokensIn.refresh_token })
-         .json(tokens)
+         .cookie('access_token', access_token, { httpOnly: true, maxAge: expiresTokensIn.access_token })
+         .cookie('refresh_token', refresh_token, { httpOnly: true, maxAge: expiresTokensIn.refresh_token })
+         .json({ access_token, refresh_token })
    }
 }

@@ -1,13 +1,12 @@
 import crypto from 'crypto'
+import { Error as MongooseError } from 'mongoose'
 
-import ServiceError, { ServiceErrorName } from '@/shared/errors/ServiceError'
-import UserModel from '@/user/models/user.model'
+import ProfileModel from '@/user/models/profile.model'
 
-import PostModel from '../models/post.model'
-import { type IPost } from '../types/types'
+import { PostServiceExceptionFactory } from '../errors/PostServiceException'
+import PostModel, { type IPost } from '../models/post.model'
 
-export type Post = Pick<IPost, 'uuid' | 'content' | 'created_at' | 'user_uuid' | 'user' | 'images'>
-export type UserPost = Pick<IPost, 'uuid' | 'content' | 'created_at' | 'user_uuid' | 'user' | 'images'> & { type: 'post' | 'repost', reposted_at?: Date }
+type Post = Pick<IPost, 'uuid' | 'content' | 'created_at' | 'user_uuid' | 'images'>
 
 interface Paging {
    page: number
@@ -16,30 +15,18 @@ interface Paging {
    max_page: number
 }
 
-type FindPostsArguments = {
-   [K in keyof Pick<Paging, 'page' | 'limit'>]: Paging[K]
+interface PostsWithPaging {
+   posts: Post[]
+   paging: Paging
 }
 
-type FindUserPostPaging = { [K in keyof Pick<Paging, 'page' | 'limit'>]: Paging[K] }
-
-interface FindUserPostsConditions {
+interface FindPostsArgs {
    user_uuid?: string
 }
 
-interface PostsWithPaging<T = Post | UserPost> {
-   posts: T[]
-   paging: {
-      page: number
-      limit: number
-      max_page: number
-      total_results: number
-   }
-}
-
-interface NewPostArguments {
-   user: Post['user'] | string
-   user_uuid: Post['user_uuid']
+interface NewPost {
    content: Post['content']
+   user_uuid: Post['user_uuid']
    images?: string[]
 }
 
@@ -53,236 +40,203 @@ export default class PostService {
       images: true,
    }
 
-   /***
-   * @throws user_not_found
-   **/
-   async findPosts(args?: FindPostsArguments): Promise<PostsWithPaging<Post>> {
-      const { page = 1, limit = 20 } = args || {}
+   async findPosts(params?: FindPostsArgs, paging?: Partial<Paging>): Promise<PostsWithPaging> {
+      const { page = 1, limit = 20 } = paging ?? {}
+      const { user_uuid } = params ?? {}
 
-      let posts: Post[] = []
-      let totalResults = 0
+      if (!user_uuid) {
+         const [results, totalResults] = await Promise.all([
+            PostModel
+               .find()
+               .select(this.post_projection)
+               .sort({ created_at: -1 })
+               .skip((page - 1) * limit)
+               .limit(limit),
+            PostModel.countDocuments()
+         ])
 
-      const [results, total] = await Promise.all([
-         await PostModel.find()
-            .select(this.post_projection)
-            .skip((page - 1) * limit)
-            .limit(limit)
-            .sort({ created_at: -1 }),
-         await PostModel.countDocuments()
-      ])
-
-      posts = results.map((post) => {
-         const json = post.toJSON()
          return {
-            type: 'post',
-            ...json
-         }
-      })
-
-      totalResults = total
-
-      return {
-         posts: posts,
-         paging: {
-            page,
-            limit,
-            total_results: totalResults,
-            max_page: Math.ceil(totalResults / limit)
+            posts: results.map((p) => {
+               // eslint-disable-next-line @typescript-eslint/no-unused-vars
+               const { user, _id, ...rest } = p.toJSON()
+               return rest
+            }),
+            paging: {
+               page,
+               limit,
+               total_results: totalResults,
+               max_page: Math.ceil(totalResults / limit)
+            }
          }
       }
-   }
 
-   async findUserPosts(condition: FindUserPostsConditions, paging: FindUserPostPaging): Promise<PostsWithPaging<UserPost>> {
-      const { user_uuid } = condition || {}
-      const { page = 1, limit = 20 } = paging || {}
+      const profile = await ProfileModel
+         .findOne()
+         .where({ user_uuid })
+         .select('posts')
 
-      let posts: UserPost[] = []
-      let totalResults = 0
+      if (!profile) throw PostServiceExceptionFactory.userNotFound({ user_uuid })
 
-      if (user_uuid) {
-         const user = await UserModel
+      const findPost = async (post_uuid: string) => {
+         const post = await PostModel
             .findOne()
-            .where({ uuid: user_uuid })
-            .select('posts')
-
-         if (!user) {
-            const err = new Error('User not found')
-            err.name = 'user_not_found'
-            throw err
-         }
-
-         const results: UserPost[] = await Promise.all(
-            user
-               .posts
-               .reverse()
-               .slice((page - 1) * limit, limit)
-               .map(async (p) => {
-                  const result = await PostModel
-                     .findOne()
-                     .where({ uuid: p.uuid })
-                     .select(this.post_projection)
-
-                  const json = result.toJSON()
-
-                  return {
-                     type: p.type,
-                     reposted_at: p.reposted_at,
-                     ...json
-                  }
-               })
-         )
-
-         posts = results
-         totalResults = user.posts.length
-      }
-
-      return {
-         posts: posts,
-         paging: {
-            page,
-            limit,
-            total_results: totalResults,
-            max_page: Math.ceil(totalResults / limit)
-         }
-      }
-   }
-
-   async findPost(args?: { uuid?: string }): Promise<Post | null> {
-      const { uuid } = args || {}
-
-      try {
-         const post = await PostModel.findOne()
-            .where({ uuid })
+            .where({ uuid: post_uuid })
             .select(this.post_projection)
 
-         if (!post) return null
+         if (!post) throw PostServiceExceptionFactory.unexpectedError('Post not found', { post_uuid })
 
-         return post.toJSON() as Post
-      } catch (error: any) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
+         return post.toJSON()
+      }
+
+      const results = await Promise.all(
+         profile
+            .posts
+            .reverse()
+            .slice((page - 1) * limit, limit)
+            .map(async (p) => {
+               // eslint-disable-next-line @typescript-eslint/no-unused-vars
+               const { user, _id, ...rest } = await findPost(p.uuid)
+
+               return {
+                  type: p.type,
+                  reposted_at: p.reposted_at,
+                  ...rest
+               }
+            })
+      )
+
+      return {
+         posts: results,
+         paging: {
+            page,
+            limit,
+            total_results: profile.posts.length,
+            max_page: Math.ceil(profile.posts.length / limit)
+         }
       }
    }
 
-   /***
-      * @throws ServiceError.InvalidInput
-      * @throws ServiceError.DatabaseError
-   **/
-   async createPost(data: NewPostArguments): Promise<Post> {
+   async findPost({ uuid }: { uuid: string }): Promise<Post> {
+      const post = await PostModel.findOne()
+         .where({ uuid })
+         .select(this.post_projection)
+
+      if (!post) throw PostServiceExceptionFactory.postNotFound({ uuid })
+
+      return {
+         uuid: post.uuid,
+         content: post.content,
+         created_at: post.created_at,
+         images: post.images,
+         user_uuid: post.user_uuid,
+      }
+   }
+
+   async createPost(data: NewPost): Promise<Post> {
       const postModel = new PostModel({
          user_uuid: data.user_uuid,
          content: data.content,
-         user: data.user,
          uuid: crypto.randomBytes(16).toString('hex'),
          created_at: Date.now(),
          images: data.images ?? []
       })
 
-      const inputError = postModel.validateSync()
-      if (inputError) throw new ServiceError(ServiceErrorName.InvalidInput, inputError.message, inputError)
+      const err = await postModel.validate()
+         .catch((err: MongooseError.ValidationError) => {
+            const validationErr = Object.values(err.errors).find(error => error instanceof MongooseError.ValidatorError)
+            if (validationErr) return validationErr
 
-      let post: Post
+            const castError = Object.values(err.errors).find(error => error instanceof MongooseError.CastError)
+            return castError
+         })
 
-      try {
-         const savedPost = await postModel.save()
-         post = savedPost.toJSON()
-      } catch (error) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
-      }
+      if (err instanceof MongooseError.ValidatorError) throw PostServiceExceptionFactory.validationError(err.message, { [err.path]: err.message })
+      if (err instanceof MongooseError.CastError) throw err
 
-      return post
+      return await postModel
+         .save()
+         .then((post) => ({
+            uuid: post.uuid,
+            content: post.content,
+            created_at: post.created_at,
+            images: post.images,
+            user_uuid: post.user_uuid
+         }))
    }
 
-   /**
-      @throws ServiceError.DatabaseError
-   **/
-   async deletePost(uuid: string) {
-      try {
-         await PostModel.findOneAndDelete({ uuid })
-      } catch (error) {
-         throw new ServiceError(ServiceErrorName.DatabaseError, error.message, error)
+   async deletePost(uuid: string): Promise<Post> {
+      const result = await PostModel.findOne({ uuid })
+      if (!result) throw PostServiceExceptionFactory.postNotFound({ uuid })
+
+      const post = result.toJSON()
+
+      await PostModel.deleteOne({ uuid: post.uuid })
+
+      return {
+         uuid: post.uuid,
+         content: post.content,
+         created_at: post.created_at,
+         images: post.images,
+         user_uuid: post.user_uuid,
       }
    }
 
-   /**
-      @throws post_not_found
-      @throws user_not_found
-      @throws post_already_reposted
-   **/
-   async repost(postUuid: string, userUuid: string): Promise<Post> {
-      const post = await this.findPost({ uuid: postUuid })
+   async repost(post_uuid: string, user_uuid: string): Promise<Post> {
+      const post = await PostModel.findOne({ uuid: post_uuid })
+      const profile = await ProfileModel.findOne().where({ user_uuid })
 
-      if (!post) {
-         const err = new Error('Post not found')
-         err.name = 'post_not_found'
-         throw err
+      if (!post) throw PostServiceExceptionFactory.postNotFound({ post_uuid })
+      if (!profile) throw PostServiceExceptionFactory.userNotFound({ user_uuid })
+
+      const isAlreadyReposted = profile.posts.some((p) => p.uuid === post_uuid && p.type === 'repost')
+
+      if (isAlreadyReposted) throw PostServiceExceptionFactory.validationError('Post already reposted', { post_uuid })
+
+      const updatedPosts = [...profile.posts, { uuid: post_uuid, type: 'repost', reposted_at: new Date().toString() }]
+
+      await ProfileModel
+         .updateOne({ runValidators: true })
+         .where({ user_uuid })
+         .set({ posts: updatedPosts })
+
+      return {
+         uuid: post.uuid,
+         content: post.content,
+         created_at: post.created_at,
+         images: post.images,
+         user_uuid: post.user_uuid,
       }
-
-      const user = await UserModel.findOne().where({ uuid: userUuid })
-
-      if (!user) {
-         const err = new Error('User not found')
-         err.name = 'user_not_found'
-         throw err
-      }
-
-      const alreadyReposted = user.posts.some((p) => p.uuid === postUuid && p.type === 'repost')
-
-      if (alreadyReposted) {
-         const err = new Error('Post already reposted')
-         err.name = 'post_already_reposted'
-         throw err
-      }
-
-      const updatedPosts = [...user.posts, { uuid: postUuid, type: 'repost', reposted_at: new Date().toString() }]
-
-      await UserModel.findByIdAndUpdate(
-         user._id,
-         { $set: { posts: updatedPosts } },
-         { runValidators: true }
-      )
-
-      return post
    }
 
-   /**
-      @throws post_not_found
-      @throws user_not_found
-      @throw post_not_reposted
-   **/
-   async deleteRepost(postUuid: string, userUuid: string) {
-      const post = await this.findPost({ uuid: postUuid })
+   async deleteRepost(post_uuid: string, user_uuid: string): Promise<Post> {
+      const post = await PostModel.findOne({ uuid: post_uuid })
 
-      if (!post) {
-         const err = new Error('Post not found')
-         err.name = 'post_not_found'
-         throw err
-      }
+      if (!post) throw PostServiceExceptionFactory.postNotFound({ post_uuid: post_uuid })
 
-      const user = await UserModel
+      const profile = await ProfileModel
          .findOne()
-         .where({ uuid: userUuid })
-         .select({ posts: true, uuid: true })
+         .where({ user_uuid })
+         .select({ posts: true })
 
-      if (!user) {
-         const err = new Error('User not found')
-         err.name = 'user_not_found'
-         throw err
+      if (!profile) throw PostServiceExceptionFactory.userNotFound({ user_uuid })
+
+      const isNotReposted = profile.posts.some((p) => p.uuid === post_uuid && p.type === 'repost')
+
+      if (!isNotReposted) throw PostServiceExceptionFactory.validationError('Post is not reposted', { post_uuid })
+
+      const updatedPosts = profile.posts.filter((p) => p.uuid !== post_uuid)
+
+      await ProfileModel
+         .updateOne({ runValidators: true })
+         .where({ user_uuid })
+         .set({ posts: updatedPosts })
+
+      return {
+         uuid: post.uuid,
+         content: post.content,
+         created_at: post.created_at,
+         images: post.images,
+         user_uuid: post.user_uuid,
       }
-
-      const alreadyReposted = user.posts.some((p) => p.uuid === postUuid && p.type === 'repost')
-
-      if (!alreadyReposted) {
-         const err = new Error('Post is not reposted')
-         err.name = 'post_not_reposted'
-         throw err
-      }
-
-      const updatedPosts = user.posts.filter((p) => p.uuid !== postUuid)
-
-      await UserModel.findByIdAndUpdate(
-         user._id,
-         { $set: { posts: updatedPosts } },
-         { runValidators: true }
-      )
    }
 }

@@ -1,10 +1,11 @@
 import type { NextFunction, Request, Response } from 'express'
 
-import ServiceError, { ServiceErrorName } from '@/shared/errors/ServiceError'
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 
 import ImageService from '../../images/image.service'
-import UserService, { type User } from '../services/user.service'
+import ProfileServiceException from '../errors/ProfileServiceException'
+import ProfileService from '../services/profile.service'
+import UserService from '../services/user.service'
 
 interface QueryRequest extends Request {
    files: {
@@ -12,9 +13,9 @@ interface QueryRequest extends Request {
       header?: Express.Multer.File[]
    } & Request['files']
    body: {
-      username?: string
       name?: string
       description?: string
+      brithday: string
       delete_avatar?: 'true' | 'false'
       delete_header?: 'true' | 'false'
    }
@@ -54,6 +55,7 @@ export default class UpdateProfileController {
    private next: NextFunction
    private readonly userService = new UserService()
    private readonly imageService = new ImageService()
+   private readonly profileService = new ProfileService()
 
    constructor(req: Request, res: Response, next: NextFunction) {
       this.req = req as QueryRequest
@@ -66,31 +68,32 @@ export default class UpdateProfileController {
    async execute() {
       const body = this.req.body
       const files = this.req.files as ExpressFilesObject
-      let user: User
+      let user: Awaited<ReturnType<UserService['findUser']>>
+      let profile: Awaited<ReturnType<ProfileService['findProfile']>>
 
       if (!this.req.headers['content-type']?.includes('multipart/form-data')) {
          const exception = ExceptionFactory.contentTypeNotSupport('expected multipart/form-data')
          return this.res.status(exception.status).json(exception.toJSON())
       }
 
-      if(!this.req.session) return this.next(new Error('Session not found'))
-      const currentUserId = this.req.session.user_id
+      if (!this.req.session) return this.next(new Error('Authenticated session not found'))
+      const user_uuid = this.req.session.user_uuid
 
       try {
-         user = await this.userService.findUser({ _id: currentUserId })
-         if (!user) return this.next(new Error('User not found'))
+         user = await this.userService.findUser({ uuid: user_uuid })
+         profile = await this.profileService.findProfile({ user_uuid: user.uuid })
       } catch (error) {
          return this.next(error)
       }
 
       const images: UserImages = {
          avatar: {
-            id: user.avatar,
+            id: profile.avatar,
             file: null,
             updated: !!files.avatar,
          },
          header: {
-            id: user.header,
+            id: profile.header,
             file: null,
             updated: !!files.header,
          }
@@ -124,8 +127,8 @@ export default class UpdateProfileController {
             images.avatar.new = { file: savedAvatar, id: savedAvatar.name.split('.')[0], isEmpty: false }
 
             await this.imageService.deleteImage(images.avatar.id)
-         } catch (error) {
-            return await this.revokeChanges(user._id, images)
+         } catch (error: unknown) {
+            return await this.revokeChanges(user.uuid, images)
                .catch((error) => this.next(error))
                .then(() => this.next(error))
          }
@@ -136,50 +139,32 @@ export default class UpdateProfileController {
             const savedHeader = await this.imageService.saveImage(files.header[0])
             images.header.updated = true
             images.header.new = { file: savedHeader, id: savedHeader.name.split('.')[0], isEmpty: false }
-         } catch (error) {
-            return await this.revokeChanges(user._id, images)
+         } catch (error: unknown) {
+            return await this.revokeChanges(user.uuid, images)
                .catch((error) => this.next(error))
                .then(() => this.next(error))
          }
       }
 
-      if (body.username) {
-         try {
-            const user = await this.userService.findUser({ username: body.username })
-
-            if (user) {
-               const exception = ExceptionFactory.invalidInput('Username already taken')
-
-               return await this.revokeChanges(user._id, images)
-                  .catch((error) => this.next(error))
-                  .then(() => this.res.status(exception.status).json(exception.toJSON()))
-            }
-         } catch (error) {
-            await this.revokeChanges(user._id, images)
-            return this.next(error)
-         }
-      }
-
       try {
-         const newUser: Parameters<UserService['updateUser']>[1] = {}
+         const newUser: Parameters<ProfileService['updateProfile']>[1] = {}
 
          if (images.avatar.updated) newUser.avatar = images.avatar.new.id
          if (images.header.updated) newUser.header = images.header.new.id
-         if (body.username !== undefined) newUser.username = body.username
          if (body.name !== undefined) newUser.name = body.name
          if (body.description !== undefined) newUser.description = body.description
 
-         await this.userService.updateUser(user._id.toString(), newUser)
+         await this.profileService.updateProfile(user.uuid, newUser)
       } catch (error) {
-         if (error instanceof ServiceError && error.name === ServiceErrorName.InvalidInput) {
+         if (error instanceof ProfileServiceException && error.name === 'validation_error') {
             const exception = ExceptionFactory.invalidInput(error.message)
 
-            return await this.revokeChanges(user._id, images)
+            return await this.revokeChanges(user.uuid, images)
                .catch((error) => this.next(error))
                .then(() => this.res.status(exception.status).json(exception.toJSON()))
          }
 
-         return await this.revokeChanges(user._id, images)
+         return await this.revokeChanges(user.uuid, images)
             .catch((error) => this.next(error))
             .then(() => this.next(error))
       }
@@ -187,15 +172,15 @@ export default class UpdateProfileController {
       return this.res.status(200).json()
    }
 
-   private async revokeChanges(userId: User['_id'], images: UserImages) {
-      const newUser: Parameters<UserService['updateUser']>[1] = {}
+   private async revokeChanges(user_uuid: string, images: UserImages) {
+      const newProfile: Parameters<ProfileService['updateProfile']>[1] = {}
 
       if (images.avatar.updated) {
          if (images.avatar.new?.file) await this.imageService.deleteImage(images.avatar.new.id)
 
          if (images.avatar.file) {
             const oldAvatar = await this.imageService.saveImage(images.avatar.file)
-            newUser.avatar = oldAvatar.name.split('.')[0]
+            newProfile.avatar = oldAvatar.name.split('.')[0]
          }
       }
 
@@ -204,10 +189,10 @@ export default class UpdateProfileController {
 
          if (images.header.file) {
             const oldHeader = await this.imageService.saveImage(images.header.file)
-            newUser.header = oldHeader.name.split('.')[0]
+            newProfile.header = oldHeader.name.split('.')[0]
          }
       }
 
-      if (Object.keys(newUser).length > 0) await this.userService.updateUser(userId.toString(), newUser)
+      if (Object.keys(newProfile).length > 0) await this.profileService.updateProfile(user_uuid, newProfile)
    }
 }

@@ -1,146 +1,134 @@
 import { v4 as uuid } from 'uuid'
 
+import { ChatServiceExceptionFactory } from '../errors/ChatServiceException'
 import ChatModel, { type IMessage } from '../models/chat.model'
 import { type Message } from './chat.service'
 
 export default class MessageService {
-   private projection = {
-      _id: true,
+   private chat_projection = {
       uuid: true,
       users: true,
       messages: true,
-      created_at: true,
-      read: true
+      created_at: true
    }
 
-   /**
-      @throws chat_not_found
-      @throws message_not_found
-   **/
-   async readMessage(messageUuid: string): Promise<Message> {
-      const chat = await ChatModel
+   async readMessage(message_uuid: string): Promise<Message> {
+      const result = await ChatModel
          .findOne()
-         .where({ 'messages.uuid': messageUuid })
-         .select({ ...this.projection })
+         .where({ 'messages.uuid': message_uuid })
+         .select(this.chat_projection)
 
-      if (!chat) {
-         const err = new Error('Chat not found')
-         err.name = 'chat_not_found'
-         throw err
+      if (!result) throw ChatServiceExceptionFactory.chatNotFound({ message_uuid: message_uuid })
+
+      const chat = result.toJSON()
+
+      const message = chat.messages.find(m => m.uuid === message_uuid)
+
+      if (!message) throw ChatServiceExceptionFactory.messageNotFound({ message_uuid: message_uuid })
+
+      const updatedMessage: Message = {
+         uuid: message.uuid,
+         user_uuid: message.user_uuid,
+         content: message.content,
+         timestamp: message.timestamp,
+         read: true,
+         deleted: message.deleted,
+         deletedAt: message.deletedAt
       }
 
-      const message = chat.messages.find(m => m.uuid === messageUuid)
-
-      if (!message) {
-         const err = new Error('Message not found')
-         err.name = 'message_not_found'
-         throw err
-      }
-
-      let msgCopy: Message | null = null
-
-      chat.messages = chat.messages.map(m => {
-         if (m.uuid === messageUuid) {
-            m.read = true
-            msgCopy = m
-         }
-
-         return m
-      })
-
-      await ChatModel.findOneAndUpdate(
-         { uuid: chat.uuid, 'messages.uuid': messageUuid },
-         { $set: { messages: chat.messages } }
+      const updatedMessages = chat.messages.map(m =>
+         m.uuid === message_uuid ? updatedMessage : m
       )
 
-      return msgCopy
+      await ChatModel
+         .findOneAndUpdate({ runValidators: true })
+         .where({ uuid: chat.uuid })
+         .set({ messages: updatedMessages })
+         .select(this.chat_projection)
+
+      return updatedMessage
    }
 
-   /**
-      @throws chat_not_found
-      @throws message_not_found
-      @throws forbidden
-   **/
-   async deleteMessage(messageUuid: string): Promise<Message> {
-      const chat = await ChatModel
+   async deleteMessage(message_uuid: string): Promise<Message> {
+      const result = await ChatModel
          .findOne()
-         .where({ 'messages.uuid': messageUuid })
-         .select({ ...this.projection })
+         .where({ 'messages.uuid': message_uuid })
+         .select(this.chat_projection)
 
-      if (!chat) {
-         const err = new Error('Chat not found')
-         err.name = 'chat_not_found'
-         throw err
-      }
+      if (!result) throw ChatServiceExceptionFactory.chatNotFound({ message_uuid: message_uuid })
 
-      const message = chat.messages.find(m => m.uuid === messageUuid)
+      const chat = result.toJSON()
 
-      if (!message) {
-         const err = new Error('Message not found')
-         err.name = 'message_not_found'
-         throw err
-      }
+      const message = chat.messages.find(m => m.uuid === message_uuid)
+
+      if (!message) throw ChatServiceExceptionFactory.messageNotFound({ message_uuid: message_uuid })
 
       const fifteenMinutes = 15 * 60 * 1000
       const messageAge = Date.now() - new Date(message.timestamp).getTime()
 
-      if (messageAge > fifteenMinutes) {
-         const err = new Error('Message can only be deleted within 15 minutes')
-         err.name = 'forbidden'
-         throw err
+      if (messageAge > fifteenMinutes) throw ChatServiceExceptionFactory.timeExpired({ message_uuid: message_uuid })
+
+      const updatedMessage: Message = {
+         uuid: message.uuid,
+         user_uuid: message.user_uuid,
+         content: null,
+         timestamp: message.timestamp,
+         read: message.read,
+         deleted: true,
+         deletedAt: new Date()
       }
 
-      let msgCopy: Message | null = null
-
-      chat.messages = chat.messages.map(m => {
-         if (m.uuid === messageUuid) {
-            m.content = null
-            m.deleted = true
-            m.deletedAt = new Date()
-            msgCopy = m
-         }
-
-         return m
-      })
-
-      await ChatModel.findOneAndUpdate(
-         { uuid: chat.uuid, 'messages.uuid': messageUuid },
-         { $set: { messages: chat.messages } }
+      const updatedMessages = chat.messages.map(m =>
+         m.uuid === message_uuid ? updatedMessage : m
       )
 
-      return msgCopy
+      await ChatModel
+         .findOneAndUpdate({ runValidators: true })
+         .where({ uuid: chat.uuid })
+         .set({ messages: updatedMessages })
+         .select(this.chat_projection)
+
+      return updatedMessage
    }
 
-   /**
-      @throws message_not_found
-   **/
    async findMessage(messageUuid: string): Promise<Message> {
-      const chat = await ChatModel
+      const result = await ChatModel
          .findOne()
          .where({ 'messages.uuid': messageUuid })
-         .select({ ...this.projection })
+         .select(this.chat_projection)
 
-      if (!chat) {
-         const err = new Error('Message not found')
-         err.name = 'message_not_found'
-         throw err
-      }
+      if (!result) throw ChatServiceExceptionFactory.chatNotFound({ message_uuid: messageUuid })
+
+      const chat = result.toJSON()
 
       const message = chat.messages.find(m => m.uuid === messageUuid)
 
-      if (!message) {
-         const err = new Error('Message not found')
-         err.name = 'message_not_found'
-         throw err
-      }
+      if (!message) throw ChatServiceExceptionFactory.messageNotFound({ message_uuid: messageUuid })
 
-      return message
+      return {
+         uuid: message.uuid,
+         user_uuid: message.user_uuid,
+         content: message.content,
+         timestamp: message.timestamp,
+         read: message.read,
+         deleted: message.deleted,
+         deletedAt: message.deletedAt
+      }
    }
 
-   async addMessage(chatUuid: string, messageData: { user_id: string; content: string }): Promise<Message> {
+   async addMessage(chatUuid: string, messageData: { user_uuid: string; content: string }): Promise<Message> {
+      const result = await ChatModel
+         .findOne()
+         .where({ uuid: chatUuid })
+         .select(this.chat_projection)
+
+      if (!result) throw ChatServiceExceptionFactory.chatNotFound({ uuid: chatUuid })
+
+      const chat = result.toJSON()
+
       const newMessage: IMessage = {
          uuid: uuid(),
-         user_id: messageData.user_id,
+         user_uuid: messageData.user_uuid,
          content: messageData.content,
          timestamp: new Date(),
          read: false,
@@ -149,18 +137,16 @@ export default class MessageService {
       }
 
       await ChatModel
-         .findOneAndUpdate(
-            { uuid: chatUuid },
-            { $push: { messages: newMessage } },
-            { new: true }
-         )
-         .select(this.projection)
+         .findOneAndUpdate({ runValidators: true })
+         .where({ uuid: chatUuid })
+         .set({ messages: [...chat.messages, newMessage] })
+         .select(this.chat_projection)
 
       return {
          uuid: newMessage.uuid,
+         user_uuid: newMessage.user_uuid,
          content: newMessage.content,
          timestamp: newMessage.timestamp,
-         user_id: newMessage.user_id,
          read: newMessage.read,
          deleted: newMessage.deleted,
          deletedAt: newMessage.deletedAt

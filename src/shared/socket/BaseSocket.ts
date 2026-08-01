@@ -1,6 +1,7 @@
 import { type Namespace, type Server } from 'socket.io'
 import { type DefaultEventsMap } from 'socket.io/dist/typed-events'
 
+import AuthServiceException from '@/auth/errors/AuthServiceException'
 import AccessTokenService from '@/auth/services/access_token.service'
 import { type TokenPayload } from '@/auth/types/types'
 
@@ -36,25 +37,23 @@ export default abstract class BaseSocket {
    }
 
    private async consumeAccess(token: string) {
-      let tokenPayload: TokenPayload = null
+      let tokenPayload: TokenPayload
 
       try {
-         const decodedToken = this.accessTokenService.decodeToken(token)
-
-         if (decodedToken.error_name === 'expired_access_token') {
+         tokenPayload = this.accessTokenService.decodeToken(token)
+      } catch (error: unknown) {
+         if (error instanceof AuthServiceException && error.name === 'expired_access_token') {
             const err = new Error('Expired access token')
             err.name = AuthenticationError.EXPIRED_ACCESS_TOKEN
             throw err
          }
 
-         if (decodedToken.error_name === 'invalid_access_token') {
+         if (error instanceof AuthServiceException && error.name === 'invalid_access_token') {
             const err = new Error('Invalid access token')
             err.name = AuthenticationError.INVALID_ACCESS_TOKEN
             throw err
          }
 
-         tokenPayload = decodedToken.payload
-      } catch (error: unknown) {
          const err = new Error('Internal Server Error', error)
          err.name = ClientError.INTERNAL_SERVER_ERROR
          throw err
@@ -73,7 +72,7 @@ export default abstract class BaseSocket {
             token,
             'consumed',
             tokenPayload.jwtId,
-            tokenPayload.user_id,
+            tokenPayload.user_uuid,
             tokenPayload.exp
          )
       } catch (error: unknown) {

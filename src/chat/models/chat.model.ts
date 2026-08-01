@@ -1,8 +1,8 @@
-import { model, Schema, Types } from 'mongoose'
+import { model, Schema } from 'mongoose'
 
 interface IMessage {
    uuid: string
-   user_id: string
+   user_uuid: string
    content: string | null
    timestamp: Date
    read: boolean
@@ -12,7 +12,7 @@ interface IMessage {
 
 interface IChat {
    uuid: string
-   users: Types.ObjectId[]
+   users: [string, string]
    messages: IMessage[]
    created_at: Date
 }
@@ -23,7 +23,7 @@ const MessageSchema = new Schema<IMessage>({
       unique: true,
       require: [true, 'Message UUID is required']
    },
-   user_id: {
+   user_uuid: {
       type: String,
       require: [true, 'User ID is required']
    },
@@ -56,7 +56,7 @@ const ChatSchema = new Schema<IChat>({
       require: [true, 'Chat UUID is required']
    },
    users: {
-      type: [Types.ObjectId],
+      type: [String],
       require: [true, 'Users are required']
    },
    created_at: {

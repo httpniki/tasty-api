@@ -1,41 +1,18 @@
 import { model, Schema, type Types } from 'mongoose'
 import uniqueValidator from 'mongoose-unique-validator'
 
+import AuthService from '@/auth/services/auth.service'
+
 export interface IUser {
    _id: Types.ObjectId
    uuid: string
    username: string
-   description: string
-   avatar: string
-   header: string
-   name: string
    email: string
    encrypted_password: string
    password?: string
-   posts: {
-      uuid: string,
-      type: 'post' | 'repost'
-      created_at: Date,
-      reposted_at?: Date
-   }[]
-   chats: { uuid: string, users: [string, string] }[]
-   follows: string[]
-   followers: string[]
-   created_at: Date
-   birthday: string
+   created_at: Date,
+   status?: 'ACTIVE'  /* | 'PENDING_ONBOARDING' */
 }
-
-const UserPostSchema = new Schema({
-   uuid: { type: String, required: true },
-   created_at: { type: Date, required: true },
-   reposted_at: { type: Date, required: false, default: null },
-   type: { type: String, required: true, enum: ['post', 'repost'] }
-}, { _id: false })
-
-const UserChatSchema = new Schema<IUser['chats'][number]>({
-   uuid: { type: String, required: true },
-   users: { type: [String, String], required: true }
-}, { _id: false })
 
 export const UserSchema = new Schema<IUser>({
    uuid: {
@@ -46,28 +23,11 @@ export const UserSchema = new Schema<IUser>({
    username: {
       type: String,
       unique: true,
-      required: [true, 'username is required'],
       minlength: [3, 'username must be at least 3 characters'],
       maxlength: [20, 'username must be at most 20 characters'],
       match: [/^[a-zA-Z0-9.]+$/, 'username can only contain letters, numbers and (.)'],
-   },
-   name: {
-      type: String,
-      required: [true, 'name is required'],
-      minlength: [3, 'name must be at least 3 characters'],
-      maxlength: [50, 'name must be at most 50 characters'],
-   },
-   description: {
-      type: String,
-      maxlength: [390, 'bio is too long (limit is 390 characters)']
-   },
-   avatar: {
-      type: String,
-      sparse: true
-   },
-   header: {
-      type: String,
       sparse: true,
+      required: [true, 'username is required'],
    },
    email: {
       type: String,
@@ -84,27 +44,33 @@ export const UserSchema = new Schema<IUser>({
       select: false
    },
    encrypted_password: {
-      type: String,
-      required: [true, 'Password is required'],
+      type: String
    },
-   posts: [UserPostSchema],
-   chats: [UserChatSchema],
-   follows: [String],
-   followers: [String],
    created_at: {
       type: Date,
       default: Date.now
    },
-   birthday: {
+   status: {
       type: String,
-      required: [true, 'birthday is required'],
-      match: [/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/, 'Birthday must be in YYYY-MM-DD format.']
+      enum: ['ACTIVE'],
+      default: 'ACTIVE',
+      required: true
    }
 })
 
-UserSchema.pre('save', function(next) {
-   this.set('password', undefined)
-   next()
+UserSchema.pre('save', async function(next) {
+   if (!this.isModified('password') || !this.password) return next()
+
+   try {
+      this.encrypted_password = await new AuthService()
+         .hashPassword(this.password)
+         .then((hash) => hash)
+
+      this.set('password', undefined)
+      next()
+   } catch (err: any) {
+      next(err)
+   }
 })
 
 UserSchema.plugin(uniqueValidator, {
