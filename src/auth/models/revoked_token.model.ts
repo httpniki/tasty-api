@@ -1,10 +1,9 @@
-import { model, Schema, type Types } from 'mongoose'
+import { model, Schema } from 'mongoose'
 
 export interface IRevokedToken {
    uuid: string
-   _id: Types.ObjectId
    token: string
-   user: Types.ObjectId
+   user_uuid: string
    revokedAt: Date
    expiresAt: Date
    reason: 'logout' | 'refresh' | 'admin' | 'expired' | 'consumed'
@@ -13,7 +12,7 @@ export interface IRevokedToken {
 const RevokedTokenSchema = new Schema<IRevokedToken>({
    uuid: { type: String, required: true, unique: true },
    token: { type: String, required: true, unique: true },
-   user: { type: Schema.Types.ObjectId, required: true, ref: 'User' },
+   user_uuid: { type: String, required: true },
    revokedAt: { type: Date, default: Date.now },
    expiresAt: { type: Date, required: true },
    reason: { type: String, enum: ['logout', 'refresh', 'admin', 'expired', 'consumed'], default: 'expired' }

@@ -35,13 +35,13 @@ export default class AccessTokenService {
       token: string,
       reason: IRevokedToken['reason'],
       jwtId: string,
-      userId: string,
+      user_uuid: string,
       expiresAt: number
    ): Promise<void> {
       const revokedTokenModel = new RevokedTokenModel({
          uuid: jwtId,
          token,
-         user: userId,
+         user_uuid,
          revokedAt: new Date(),
          expiresAt: new Date(expiresAt * 1000),
          reason
