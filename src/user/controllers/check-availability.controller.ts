@@ -47,13 +47,12 @@ export default class CheckAvailabilityController {
    }
 
    async execute() {
-      const { field, value } = this.req.body
-      let isAvailable = true
-
-      if (this.req.headers['content-type'] !== 'application/json') {
+      if (!this.req.is('application/json')) {
          const exception = ExceptionFactory.contentTypeNotSupport('expected application/json')
          return this.res.status(exception.status).json(exception.toJSON())
       }
+
+      const { field, value } = (this.req.body || {}) as DataDTO
 
       if (!field || !value) {
          const exception = ExceptionFactory.invalidInput('field and value are required')
@@ -63,6 +62,33 @@ export default class CheckAvailabilityController {
       if (!['username', 'email'].includes(field)) {
          const exception = ExceptionFactory.invalidInput('field must be username or email')
          return this.res.status(exception.status).json(exception.toJSON())
+      }
+
+      if (field === 'username' && value.length < UserModel.schema['tree'].username.minlength[0]) {
+         const response = new ResponseDTO({
+            isAvailable: false,
+            message: 'Username is too short',
+            data: { field, value }
+         })
+         return this.res.status(200).json(response.toJSON())
+      }
+
+      if (field === 'username' && value.length > UserModel.schema['tree'].username.maxlength[0]) {
+         const response = new ResponseDTO({
+            isAvailable: false,
+            message: 'Username is too long',
+            data: { field, value }
+         })
+         return this.res.status(200).json(response.toJSON())
+      }
+
+      if (field === 'username' && !UserModel.schema['tree'].username.match[0].test(value)) {
+         const response = new ResponseDTO({
+            isAvailable: false,
+            message: 'Invalid username format',
+            data: { field, value }
+         })
+         return this.res.status(200).json(response.toJSON())
       }
 
       if (field === 'email' && value.length > UserModel.schema['tree'].email.maxlength[0]) {
@@ -82,6 +108,8 @@ export default class CheckAvailabilityController {
          })
          return this.res.status(200).json(response.toJSON())
       }
+
+      let isAvailable = true
 
       try {
          if (field === 'username') {

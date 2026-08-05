@@ -1,15 +1,9 @@
 import { v4 as uuid } from 'uuid'
 
-import { ExceptionFactory } from '../../../../src/shared/response/http/ExceptionFactory'
 import UserModel from '../../../../src/user/models/user.model'
 import TestServer from '../../../lib/server'
 
 const USER_URL = '/user/check-availability'
-
-const AUTH_ERRORS = {
-   invalidInput: ExceptionFactory.invalidInput('').error_name,
-   invalidContentType: ExceptionFactory.contentTypeNotSupport('').error_name,
-}
 
 describe('CHECK AVAILABILITY CONTROLLER', () => {
    const server = new TestServer()
@@ -52,6 +46,54 @@ describe('CHECK AVAILABILITY CONTROLLER', () => {
          expect(statusCode).toBe(200)
          expect(body.isAvailable).toBe(false)
       })
+
+      test('Should return 200 with isAvailable false when username is too short', async () => {
+         const { statusCode, body } = await server.fetch
+            .post(USER_URL)
+            .send({ field: 'username', value: 'ab' })
+
+         expect(statusCode).toBe(200)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('isAvailable')
+         expect(body.isAvailable).toBeDefined()
+         expect(body.isAvailable).toBe(false)
+         expect(body).toHaveProperty('message')
+         expect(body.message).toBeDefined()
+         expect(body.message).toBe('Username is too short')
+      })
+
+      test('Should return 200 with isAvailable false when username is too long', async () => {
+         const { statusCode, body } = await server.fetch
+            .post(USER_URL)
+            .send({ field: 'username', value: 'a'.repeat(20 + 1) })
+
+         expect(statusCode).toBe(200)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('isAvailable')
+         expect(body.isAvailable).toBeDefined()
+         expect(body.isAvailable).toBe(false)
+         expect(body).toHaveProperty('message')
+         expect(body.message).toBeDefined()
+         expect(body.message).toBe('Username is too long')
+      })
+
+      test('Should return 200 with isAvailable false when username format is invalid', async () => {
+         const { statusCode, body } = await server.fetch
+            .post(USER_URL)
+            .send({ field: 'username', value: 'john doe' })
+
+         expect(statusCode).toBe(200)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('isAvailable')
+         expect(body.isAvailable).toBeDefined()
+         expect(body.isAvailable).toBe(false)
+         expect(body).toHaveProperty('message')
+         expect(body.message).toBeDefined()
+         expect(body.message).toBe('Invalid username format')
+      })
    })
 
    describe('Successful Check - Email', () => {
@@ -72,6 +114,38 @@ describe('CHECK AVAILABILITY CONTROLLER', () => {
          expect(statusCode).toBe(200)
          expect(body.isAvailable).toBe(false)
       })
+
+      test('Should return 200 with isAvailable false when email is too long', async () => {
+         const { statusCode, body } = await server.fetch
+            .post(USER_URL)
+            .send({ field: 'email', value: 'a'.repeat(255 + 1) + '@test.com' })
+
+         expect(statusCode).toBe(200)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('isAvailable')
+         expect(body.isAvailable).toBeDefined()
+         expect(body.isAvailable).toBe(false)
+         expect(body).toHaveProperty('message')
+         expect(body.message).toBeDefined()
+         expect(body.message).toBe('Email is too long')
+      })
+
+      test('Should return 200 with isAvailable false when email format is invalid', async () => {
+         const { statusCode, body } = await server.fetch
+            .post(USER_URL)
+            .send({ field: 'email', value: 'not-an-email' })
+
+         expect(statusCode).toBe(200)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('isAvailable')
+         expect(body.isAvailable).toBeDefined()
+         expect(body.isAvailable).toBe(false)
+         expect(body).toHaveProperty('message')
+         expect(body.message).toBeDefined()
+         expect(body.message).toBe('Invalid email format')
+      })
    })
 
    describe('Validation Errors', () => {
@@ -81,7 +155,11 @@ describe('CHECK AVAILABILITY CONTROLLER', () => {
             .send({ value: user.username })
 
          expect(statusCode).toBe(400)
-         expect(body.error_name).toBe(AUTH_ERRORS.invalidInput)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('error_name')
+         expect(body).toHaveProperty('message')
+         expect(body.error_name).toBe('invalid_input')
       })
 
       test('Should return 400 if value is missing', async () => {
@@ -90,7 +168,11 @@ describe('CHECK AVAILABILITY CONTROLLER', () => {
             .send({ field: 'username' })
 
          expect(statusCode).toBe(400)
-         expect(body.error_name).toBe(AUTH_ERRORS.invalidInput)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('error_name')
+         expect(body).toHaveProperty('message')
+         expect(body.error_name).toBe('invalid_input')
       })
 
       test('Should return 400 if both field and value are missing', async () => {
@@ -99,7 +181,11 @@ describe('CHECK AVAILABILITY CONTROLLER', () => {
             .send({})
 
          expect(statusCode).toBe(400)
-         expect(body.error_name).toBe(AUTH_ERRORS.invalidInput)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('error_name')
+         expect(body).toHaveProperty('message')
+         expect(body.error_name).toBe('invalid_input')
       })
 
       test('Should return 400 if field is invalid', async () => {
@@ -108,7 +194,11 @@ describe('CHECK AVAILABILITY CONTROLLER', () => {
             .send({ field: 'invalid', value: user.username })
 
          expect(statusCode).toBe(400)
-         expect(body.error_name).toBe(AUTH_ERRORS.invalidInput)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('error_name')
+         expect(body).toHaveProperty('message')
+         expect(body.error_name).toBe('invalid_input')
       })
 
       test('Should return 400 if field is empty string', async () => {
@@ -117,7 +207,11 @@ describe('CHECK AVAILABILITY CONTROLLER', () => {
             .send({ field: '', value: user.username })
 
          expect(statusCode).toBe(400)
-         expect(body.error_name).toBe(AUTH_ERRORS.invalidInput)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('error_name')
+         expect(body).toHaveProperty('message')
+         expect(body.error_name).toBe('invalid_input')
       })
 
       test('Should return 400 if value is empty string', async () => {
@@ -126,7 +220,11 @@ describe('CHECK AVAILABILITY CONTROLLER', () => {
             .send({ field: 'username', value: '' })
 
          expect(statusCode).toBe(400)
-         expect(body.error_name).toBe(AUTH_ERRORS.invalidInput)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('error_name')
+         expect(body).toHaveProperty('message')
+         expect(body.error_name).toBe('invalid_input')
       })
    })
 
@@ -139,7 +237,11 @@ describe('CHECK AVAILABILITY CONTROLLER', () => {
             .field('value', user.username)
 
          expect(statusCode).toBe(400)
-         expect(body.error_name).toBe(AUTH_ERRORS.invalidContentType)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('error_name')
+         expect(body).toHaveProperty('message')
+         expect(body.error_name).toBe('invalid_content_type')
       })
 
       test('Should return 400 if Content-Type is text/plain', async () => {
@@ -149,7 +251,36 @@ describe('CHECK AVAILABILITY CONTROLLER', () => {
             .send('field=username&value=test')
 
          expect(statusCode).toBe(400)
-         expect(body.error_name).toBe(AUTH_ERRORS.invalidContentType)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('error_name')
+         expect(body).toHaveProperty('message')
+         expect(body.error_name).toBe('invalid_content_type')
+      })
+
+      test('Should return 400 if Content-Type is missing', async () => {
+         const { statusCode, body } = await server.fetch.post(USER_URL)
+
+         expect(statusCode).toBe(400)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('error_name')
+         expect(body).toHaveProperty('message')
+         expect(body.error_name).toBe('invalid_content_type')
+      })
+
+      test('Should return 200 if Content-Type is application/json with charset', async () => {
+         const { statusCode, body } = await server.fetch
+            .post(USER_URL)
+            .set('Content-Type', 'application/json; charset=utf-8')
+            .send({ field: 'username', value: 'availableUsername' })
+
+         expect(statusCode).toBe(200)
+         expect(body).toBeDefined()
+         expect(body).toBeInstanceOf(Object)
+         expect(body).toHaveProperty('isAvailable')
+         expect(body.isAvailable).toBeDefined()
+         expect(body.isAvailable).toBe(true)
       })
    })
 })
