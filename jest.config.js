@@ -30,14 +30,14 @@ export default {
    detectOpenHandles: true,
    testMatch: ['<rootDir>/__tests__/tests/**/*.test.ts'],
    moduleNameMapper: {
-      ...tsJestPaths,
       '^(\\.{1,2}/.*)\\.js$': '$1',
-      '^@/(.*)$': '<rootDir>/src/$1',
-      '^@user/(.*)$': '<rootDir>/src/user/$1',
-      '^@post/(.*)$': '<rootDir>/src/post/$1',
-      '^@messages/(.*)$': '<rootDir>/src/message/$1',
-      '^@shared/(.*)$': '<rootDir>/src/shared/$1',
-      '^@auth/(.*)$': '<rootDir>/src/auth/$1',
+      '^@/(.*)\\.js$': '<rootDir>/src/$1',
+      '^@user/(.*)\\.js$': '<rootDir>/src/user/$1',
+      '^@post/(.*)\\.js$': '<rootDir>/src/post/$1',
+      '^@shared/(.*)\\.js$': '<rootDir>/src/shared/$1',
+      '^@auth/(.*)\\.js$': '<rootDir>/src/auth/$1',
+      '^@chat/(.*)\\.js$': '<rootDir>/src/chat/$1',
+      ...tsJestPaths,
    },
    roots: ['<rootDir>']
 }

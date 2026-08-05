@@ -14,7 +14,8 @@ interface FindProfileArguments {
 interface CreateProfileSchema {
    user_uuid: string
    name: string
-   birthday: Date
+   birthday?: string
+   description?: string
    avatar?: string
    header?: string
 }
@@ -66,15 +67,16 @@ export default class ProfileService {
          uuid: profile_uuid,
          user_uuid: args.user_uuid,
          name: args.name,
-         birthday: args.birthday
+         birthday: args.birthday,
+         description: args.description
       })
 
       const error = await profileModel
          .validate()
          .catch((err: MongooseError.ValidationError) => Object.values(err.errors)[0])
 
-      if (error && error instanceof MongooseError.ValidatorError) throw ProfileServiceExceptionFactory.validationError(error.message, { [error.path]: error.message })
-      if (error && error instanceof MongooseError.CastError) throw error
+      if (error && error instanceof MongooseError.ValidatorError) throw ProfileServiceExceptionFactory.validationError(error.message, { [error.path]: error.properties.value ?? '' })
+      if (error && error instanceof MongooseError.CastError) throw ProfileServiceExceptionFactory.validationError(error.message, { [error.path]: error.value })
 
       return await profileModel
          .save()

@@ -1,5 +1,5 @@
-import { type Request } from 'express'
-import multer from 'multer'
+import { type NextFunction, type Request, type Response } from 'express'
+import multer, { MulterError } from 'multer'
 
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 
@@ -18,27 +18,20 @@ export default class UserMiddleware {
          fileFilter: fileFilter,
       })
 
-      return upload.fields(fields)
+      return (req: Request, res: Response, next: NextFunction) => {
+         upload.fields(fields)(req, res, (err: unknown) => {
+            if (err instanceof MulterError && err.code === 'LIMIT_UNEXPECTED_FILE') {
+               const isConfiguredField = fields.some((f) => f.name === err.field)
+
+               if (isConfiguredField) return next(ExceptionFactory.maxFileCountExceeded(fields.find((f) => f.name === err.field)?.maxCount ?? 1))
+
+               return next(ExceptionFactory.unexpectedField(err.field))
+            }
+
+            if (err) return next(err)
+            return next()
+         })
+      }
    }
-
-   // async update_public_profile(...Args: [Request, Response, NextFunction]): Promise<Response | void> {
-   //    return await new UpdatePublicProfileMiddleware(...Args).setup()
-   // }
-
-   // validate_user_data(req: Request, res: Response, next: NextFunction): Response | null {
-   //    return new ValidateUserData().setup(req, res, next)
-   // }
-
-   // upload_image(...args: [Request, Response, NextFunction, RequestHandler]) {
-   //    return new ValidateImage(...args).setup()
-   // }
-
-   // async fetch_image(...args: [Request, Response, NextFunction]): Promise<Response | void> {
-   //    return await new FetchImageMiddleware(...args).setup()
-   // }
-
-   // async register(...args: [Request, Response, NextFunction]): Promise<Response | null> {
-   //    return await new RegisterMiddleware(...args).setup()
-   // }
 }
 

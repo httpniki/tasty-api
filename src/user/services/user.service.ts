@@ -111,7 +111,7 @@ export default class UserService {
             return castError
          })
 
-      if (err instanceof MongooseError.ValidatorError) throw UserServiceExceptionFactory.validationError(err.message, { [err.path]: err.message })
+      if (err instanceof MongooseError.ValidatorError) throw UserServiceExceptionFactory.validationError(err.message, { [err.properties.path]: err.properties.value ?? '' })
       if (err instanceof MongooseError.CastError) throw err
 
       const isNotAvailableEmail = await UserModel.findOne({ email: user.email })
@@ -119,6 +119,7 @@ export default class UserService {
 
       const isNotAvailableUsername = await UserModel.findOne({ username: user.username })
       if (isNotAvailableUsername) throw UserServiceExceptionFactory.validationError('Username already used', { username: user.username })
+
       return await userModel
          .save()
          .then((u) => {

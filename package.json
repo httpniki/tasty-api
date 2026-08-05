@@ -7,7 +7,7 @@
 		"dev": "NODE_ENV=development && tsx watch --env-file=.development.env index.ts",
 		"build": "tsc && tsc-alias",
 		"start": "NODE_ENV=production && node --env-file=.production.env dist/index.js",
-		"test": "NODE_ENV=test && node --env-file=.test.env node_modules/jest/bin/jest.js --config jest.config.js --forceExit",
+		"test": "NODE_ENV=test && node --env-file=.test.env node_modules/jest/bin/jest.js --config jest.config.js --forceExit --verbose",
 		"lint": "Next lint"
 	},
 	"author": "",

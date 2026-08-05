@@ -1,9 +1,10 @@
 import type { NextFunction, Request, Response } from 'express'
 
 import ImageService from '@/images/image.service'
-import { ServiceErrorName } from '@/shared/errors/ServiceError'
 import { ExceptionFactory } from '@/shared/response/http/ExceptionFactory'
 
+import ProfileServiceException from '../errors/ProfileServiceException'
+import UserServiceException from '../errors/UserServiceException'
 import ProfileService from '../services/profile.service'
 import UserService from '../services/user.service'
 
@@ -43,6 +44,11 @@ export default class RegisterController {
       const files = this.req.files
       let user: Awaited<ReturnType<typeof this.userService.createUser>>
 
+      if (!this.req.headers['content-type'].includes('multipart/form-data')) {
+         const exception = ExceptionFactory.contentTypeNotSupport('Content-Type must to be multipart/form-data')
+         return this.res.status(exception.status).json(exception.toJSON())
+      }
+
       const user_schema: Parameters<UserService['createUser']>[0] = {
          username: body.username,
          email: body.email,
@@ -52,7 +58,7 @@ export default class RegisterController {
       try {
          user = await this.userService.createUser(user_schema)
       } catch (error: any) {
-         if (error.name === ServiceErrorName.InvalidInput) {
+         if (error instanceof UserServiceException) {
             const exception = ExceptionFactory.invalidInput(error.message, error.data)
             return this.res.status(exception.status).json(exception.toJSON())
          }
@@ -62,7 +68,8 @@ export default class RegisterController {
 
       const profile_schema: Parameters<ProfileService['createProfile']>[0] = {
          name: body.name,
-         birthday: new Date(body.birthday),
+         birthday: body.birthday,
+         description: body.description,
          user_uuid: user.uuid
       }
 
@@ -90,7 +97,7 @@ export default class RegisterController {
       } catch (error: any) {
          this.revokeChanges(profile_schema)
 
-         if (error.name === ServiceErrorName.InvalidInput) {
+         if (error instanceof ProfileServiceException) {
             const exception = ExceptionFactory.invalidInput(error.message, error.data)
             return this.res.status(exception.status).json(exception.toJSON())
          }
