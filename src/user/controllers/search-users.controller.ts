@@ -29,13 +29,20 @@ export default class SearchUsersController {
    }
 
    async execute() {
-      const { q: query, page = 1, limit = 20 } = this.req.query
+      const { q: query, page: rawPage = '1', limit: rawLimit = '20' } = this.req.query
+      const page = Number(rawPage)
+      const limit = Number(rawLimit)
       let currentProfile: Awaited<ReturnType<ProfileService['findProfile']>> | null = null
       let paging: Awaited<ReturnType<UserService['findUsers']>>['paging']
       let results: Awaited<ReturnType<UserService['findUsers']>>['users'] = []
 
       if (!query || typeof query !== 'string') {
          const exception = ExceptionFactory.invalidParam('Query parameter "q" is required')
+         return this.res.status(exception.status).json(exception.toJSON())
+      }
+
+      if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1) {
+         const exception = ExceptionFactory.invalidParam('Page and limit must be positive integers')
          return this.res.status(exception.status).json(exception.toJSON())
       }
 
