@@ -1,3 +1,5 @@
+import { v4 as uuid } from 'uuid'
+
 import AccessTokenService from '../../../../src/auth/services/access_token.service'
 import ProfileModel from '../../../../src/user/models/profile.model'
 import UserModel from '../../../../src/user/models/user.model'
@@ -44,14 +46,22 @@ describe('UNFOLLOW USER CONTROLLER', () => {
    })
 
    async function registerUser(target: typeof user) {
-      await server.fetch
-         .post('/user/register')
-         .field('username', target.username)
-         .field('email', target.email)
-         .field('password', target.password)
-         .field('name', target.name)
-         .field('birthday', target.birthday)
-         .field('description', target.description)
+      const user_uuid = uuid()
+
+      await UserModel.create({
+         uuid: user_uuid,
+         username: target.username,
+         email: target.email,
+         password: target.password,
+      })
+
+      await ProfileModel.create({
+         uuid: uuid(),
+         user_uuid,
+         name: target.name,
+         birthday: new Date(target.birthday),
+         description: target.description,
+      })
    }
 
    async function getAccessToken(username: string) {

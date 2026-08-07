@@ -137,15 +137,23 @@ export default class UserService {
 
       if (!user) throw UserServiceExceptionFactory.userNotFound({ uuid: user_uuid })
 
-      return await UserModel.findOneAndUpdate({ runValidators: true })
+      return await UserModel.findOneAndUpdate()
          .where({ uuid: user_uuid })
          .set(data)
+         .setOptions({ runValidators: true })
          .then((u) => {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { _id, password, ...user } = u
             return user
          })
          .catch((err) => {
+            if (err instanceof MongooseError.ValidationError) {
+               const validationErr = Object.values(err.errors)[0]
+               if (validationErr instanceof MongooseError.ValidatorError) {
+                  throw UserServiceExceptionFactory.validationError(validationErr.message, { [validationErr.path]: validationErr.properties.value ?? '' })
+               }
+            }
+
             if (err instanceof MongooseError.ValidatorError) {
                throw UserServiceExceptionFactory.validationError(err.message, { [err.path]: err.message })
             }

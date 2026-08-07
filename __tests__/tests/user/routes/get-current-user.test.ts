@@ -1,3 +1,5 @@
+import { v4 as uuid } from 'uuid'
+
 import AccessTokenService from '../../../../src/auth/services/access_token.service'
 import ProfileModel from '../../../../src/user/models/profile.model'
 import UserModel from '../../../../src/user/models/user.model'
@@ -19,14 +21,7 @@ describe('GET CURRENT USER CONTROLLER', () => {
    }
 
    beforeEach(async () => {
-      await server.fetch
-         .post('/user/register')
-         .field('username', user.username)
-         .field('email', user.email)
-         .field('password', user.password)
-         .field('name', user.name)
-         .field('birthday', user.birthday)
-         .field('description', user.description)
+      await registerUser(user)
    })
 
    afterAll(async () => {
@@ -37,6 +32,25 @@ describe('GET CURRENT USER CONTROLLER', () => {
    afterEach(async () => {
       await server.clearDatabase()
    })
+
+   async function registerUser(target: typeof user) {
+      const user_uuid = uuid()
+
+      await UserModel.create({
+         uuid: user_uuid,
+         username: target.username,
+         email: target.email,
+         password: target.password,
+      })
+
+      await ProfileModel.create({
+         uuid: uuid(),
+         user_uuid,
+         name: target.name,
+         birthday: new Date(target.birthday),
+         description: target.description,
+      })
+   }
 
    async function getAccessToken(username: string) {
       const dbUser = await UserModel.findOne({ username })

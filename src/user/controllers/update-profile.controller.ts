@@ -15,9 +15,9 @@ interface QueryRequest extends Request {
    body: {
       name?: string
       description?: string
-      brithday: string
       delete_avatar?: 'true' | 'false'
       delete_header?: 'true' | 'false'
+      birthday?: string
    }
 }
 
@@ -153,11 +153,12 @@ export default class UpdateProfileController {
          if (images.header.updated) newUser.header = images.header.new.id
          if (body.name !== undefined) newUser.name = body.name
          if (body.description !== undefined) newUser.description = body.description
+         if (body.birthday !== undefined) newUser.birthday = body.birthday
 
          await this.profileService.updateProfile(user.uuid, newUser)
       } catch (error) {
          if (error instanceof ProfileServiceException && error.name === 'validation_error') {
-            const exception = ExceptionFactory.invalidInput(error.message)
+            const exception = ExceptionFactory.invalidInput(error.message, error.data)
 
             return await this.revokeChanges(user.uuid, images)
                .catch((error) => this.next(error))

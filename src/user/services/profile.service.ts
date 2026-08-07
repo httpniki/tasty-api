@@ -20,6 +20,15 @@ interface CreateProfileSchema {
    header?: string
 }
 
+interface UpdateProfileSchema {
+   name?: string
+   description?: string
+   avatar?: string
+   header?: string
+   birthday?: string
+   posts?: IProfile['posts']
+}
+
 export default class ProfileService {
    private projection = {
       uuid: true,
@@ -100,15 +109,16 @@ export default class ProfileService {
          .catch((err) => { throw err })
    }
 
-   async updateProfile(user_uuid: string, data: Partial<Omit<IProfile, 'uuid' | 'user_uuid' | '_id'>>): Promise<Profile> {
+   async updateProfile(user_uuid: string, data: UpdateProfileSchema): Promise<Profile> {
       const result = await ProfileModel.findOne({ user_uuid })
 
       if (!result) throw ProfileServiceExceptionFactory.profileNotFound({ user_uuid })
 
       return await ProfileModel
-         .findOneAndUpdate({ runValidators: true })
+         .findOneAndUpdate()
          .where({ user_uuid })
-         .set(data)
+         .set({ ...data })
+         .setOptions({ runValidators: true })
          .then((u) => {
             const user = u.toObject()
             return {
@@ -125,12 +135,20 @@ export default class ProfileService {
                birthday: user.birthday
             }
          })
-         .catch((err) => {
-            if (err instanceof MongooseError.ValidatorError) {
-               throw ProfileServiceExceptionFactory.validationError(err.message, { [err.path]: err.message })
+         .catch((error: unknown) => {
+            if (error instanceof MongooseError.CastError) throw ProfileServiceExceptionFactory.validationError(error.message, { [error.path]: error.value })
+            if (error instanceof MongooseError.ValidatorError) throw ProfileServiceExceptionFactory.validationError(error.message, { [error.path]: error.properties.value ?? '' })
+
+            if (error instanceof MongooseError.ValidationError) {
+               const validationErr = Object.values(error.errors)[0]
+               if (validationErr instanceof MongooseError.ValidatorError) throw ProfileServiceExceptionFactory.validationError(validationErr.message, { [validationErr.path]: validationErr.properties.value ?? '' })
+               if (validationErr instanceof MongooseError.CastError) throw ProfileServiceExceptionFactory.validationError(validationErr.message, { [validationErr.path]: validationErr.value })
             }
 
-            throw err
+            // if(!(error instanceof MongooseError.ValidationError)) throw error
+            // const err = Object.values(error.errors)[0]
+
+            throw error
          })
    }
 
